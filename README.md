@@ -49,7 +49,7 @@ Spread 10.338% Commission 10.353 bluna
 On the other hand, TerraSwap gives
 
 <p align="center">
-  <img width="800" height="400" src="https://raw.githubusercontent.com/Aureliano90/TunaSwap/main/multi_hop_swap.jpg" alt='multi_hop_swap'>
+  <img width="400" height="600" src="https://raw.githubusercontent.com/Aureliano90/TunaSwap/main/multi_hop_swap.jpg" alt='multi_hop_swap'>
 </p>
 
 Check token balance
