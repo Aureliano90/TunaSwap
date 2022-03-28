@@ -1,5 +1,5 @@
 import sys
-from aggregator import *
+from dex import *
 
 assert sys.version_info >= (3, 8), print('Python version >=3.8 is required.\nYour Python version: ', sys.version)
 
