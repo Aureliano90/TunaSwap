@@ -1,0 +1,3 @@
+requests~=2.27.1
+pymongo~=4.0.1
+terra_sdk~=2.0.5
