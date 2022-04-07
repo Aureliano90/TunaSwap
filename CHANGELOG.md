@@ -4,9 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.0] - April 7th, 2022
+
+### Changed
+
+* Matched SDK coding style
+
+### Added
+
+* `transaction` module
+
 ## [0.1.0] - March 28th, 2022
 
 ### Added
+
 * Support [TerraSwap](https://app.terraswap.io/Swap), [Astroport](https://app.astroport.fi/swap)
   , [Loop](https://dex.loop.markets/) and native swaps using Terra's built-in market module
 * Fully async for best performance

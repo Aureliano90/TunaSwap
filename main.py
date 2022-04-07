@@ -1,5 +1,6 @@
-import sys
 from dex import *
+from transaction import *
+import sys
 
 assert sys.version_info >= (3, 8), print('Python version >=3.8 is required.\nYour Python version: ', sys.version)
 
@@ -7,14 +8,17 @@ assert sys.version_info >= (3, 8), print('Python version >=3.8 is required.\nYou
 async def main():
     async with terra:
         # pprint(await terra.tendermint.node_info())
-        # pprint(await terra.tendermint.block_info()['block'])
+        # pprint(await terra.tendermint.block_info())
+        # pprint(await block_height())
         # pprint(await terra.bank.total())
-        # pprint(terra.last_request_height)
+        # async for height in listen_new_block():
+        #     print(loop.time(), height)
+        # exit(0)
 
         print(f'Address {wallet.key.acc_address}')
         # print(f'{await wallet.account_number_and_sequence()=}')
-        print(f'{wallet.account_number=}')
-        print(f'{wallet.sequence=}')
+        # print(f'{wallet.account_number=}')
+        # print(f'{wallet.sequence=}')
 
         from_token = 'Luna'
         to_token = 'bLuna'
@@ -23,8 +27,6 @@ async def main():
         # # Simulate swap result on a specific pair
         trade = await pool.simulate(from_token, bid)
         print(trade)
-        # trade = await Pool('UST', 'Luna', 'native_swap').simulate('ust', 10)
-        # print(trade)
         # Wrap simulation result to a message
         msgs = await pool.trade_to_msg(trade)
         # Simulate and wrap
@@ -32,10 +34,10 @@ async def main():
 
         # from_token = 'nluna'
         # to_token = 'bluna'
-        # bid = to_Dec(100, from_token)
+        # bid = to_Dec(10, from_token)
         # Find the best route with the least spread for a swap
-        # routing = await Dex('terra_swap').dijkstra_routing(from_token, bid, to_token)
-        # print(routing)
+        routing = await Dex('terra_swap').dijkstra_routing(from_token, bid, to_token)
+        print(routing)
         # Wrap trading route to a message
         # msgs = await Dex('astro_swap').route_to_msg(routing)
         # Find and wrap
@@ -48,29 +50,33 @@ async def main():
             print(f'Insufficient balance of {from_token}')
             exit(1)
 
-        # Make transaction message
-        pprint(f'{msgs=}')
-        if hasattr(msgs, 'execute_msg'):
-            if from_token.lower() in native_tokens:
-                pprint(msgs.execute_msg)
-            else:
-                pprint(msgs.execute_msg)
-                pprint(base64str_decode(msgs.execute_msg['send']['msg']))
+        pprint(msgs)
+        for msg in msgs:
+            if hasattr(msg, 'execute_msg'):
+                if from_token.lower() in native_tokens:
+                    pprint(msg.execute_msg)
+                else:
+                    pprint(msg.execute_msg)
+                    pprint(base64str_decode(msg.execute_msg['send']['msg']))
 
         # Estimate transaction fee
         fee = await estimate_fee(msgs, memo='')
         if fee:
-            pprint(f'{fee=}')
-        exit()
+            pprint(f'{fee.amount=}')
+        # exit()
 
         # Create, sign and broadcast transaction
         tx = await create_and_sign_tx(msgs, memo='')
-        pprint(tx)
+        # pprint(tx)
         result = await terra.tx.broadcast(tx)
         # for log in result.logs:
         #     for event in log.events:
         #         pprint(event)
         pprint(result)
+        save_tx(result)
+        txhash = result.txhash
+        tx = retrieve_tx(txhash)
+        print(f'{calculate_profit(tx)=}')
 
         # Query pair info on DEX
         pprint(await pair_query('astro_swap', 'ust', 'luna'))

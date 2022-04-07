@@ -104,6 +104,10 @@ Install Python 3.8+ and required packages.
 pip install -r requirements.txt
 ```
 
+Save seed phrases in a specific file or generate new ones.
+
+Set `testnet = False` in `consts.py` for mainnet.
+
 ## License
 
 This project is licensed under the AGPL-3.0 License.
