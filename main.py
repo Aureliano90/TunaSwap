@@ -60,15 +60,15 @@ async def main():
                     pprint(base64str_decode(msg.execute_msg['send']['msg']))
 
         # Estimate transaction fee
-        fee = await estimate_fee(msgs, memo='')
+        fee = await wallet.estimate_fee(msgs, memo='')
         if fee:
-            pprint(f'{fee.amount=}')
+            print(f'{fee.amount=}')
         # exit()
 
         # Create, sign and broadcast transaction
-        tx = await create_and_sign_tx(msgs, memo='')
+        tx = await wallet.create_and_sign_tx(msgs, memo='')
         # pprint(tx)
-        result = await terra.tx.broadcast(tx)
+        result = await wallet.broadcast(tx)
         # for log in result.logs:
         #     for event in log.events:
         #         pprint(event)

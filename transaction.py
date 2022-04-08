@@ -1,5 +1,5 @@
-from terra_sdk.core.broadcast import BlockTxBroadcastResult as _BlockTxBroadcastResult
 from terra import *
+from terra_sdk.core.broadcast import BlockTxBroadcastResult as _BlockTxBroadcastResult
 
 
 class BlockTxBroadcastResult(_BlockTxBroadcastResult):
@@ -17,9 +17,10 @@ def save_tx(tx: BlockTxBroadcastResult):
 def retrieve_tx(txhash: str):
     with open('txs') as f:
         for tx in f.readlines():
-            tx = json.loads(tx)
-            if tx['txhash'] == txhash:
-                return BlockTxBroadcastResult.from_json(tx)
+            if tx:
+                tx = json.loads(tx)
+                if tx['txhash'] == txhash:
+                    return BlockTxBroadcastResult.from_json(tx)
     return None
 
 
