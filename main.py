@@ -1,5 +1,4 @@
-from dex import *
-from transaction import *
+from order import *
 import sys
 
 assert sys.version_info >= (3, 8), print('Python version >=3.8 is required.\nYour Python version: ', sys.version)
@@ -24,24 +23,34 @@ async def main():
         to_token = 'bLuna'
         pool = Pool(from_token, to_token, 'astro_swap')
         bid = to_Dec(10, from_token)
-        # # Simulate swap result on a specific pair
+        # Simulate swap result on a specific pair
         trade = await pool.simulate(from_token, bid)
         print(trade)
+        # Reverse simulation
+        trade = await pool.reverse_simulate(to_token, trade.ask_size)
+        print(trade)
         # Wrap simulation result to a message
-        msgs = await pool.trade_to_msg(trade)
+        msgs = await pool.swap_to_msg(trade)
         # Simulate and wrap
-        # msgs = await Pool(from_token, to_token, 'astro_swap').swap_msg(from_token, bid)
+        # msgs = await Pool(from_token, to_token, 'astro_swap').swap(from_token, bid)
 
         # from_token = 'nluna'
         # to_token = 'bluna'
-        # bid = to_Dec(10, from_token)
+        bid = to_Dec(100, from_token)
         # Find the best route with the least spread for a swap
         routing = await Dex('terra_swap').dijkstra_routing(from_token, bid, to_token)
         print(routing)
         # Wrap trading route to a message
-        # msgs = await Dex('astro_swap').route_to_msg(routing)
+        # msgs = await Dex('terra_swap').route_to_msg(routing)
         # Find and wrap
-        # msgs = await Dex('astro_swap').swap_msg(from_token, bid, to_token)
+        # msgs = await Dex('terra_swap').swap(from_token, bid, to_token)
+
+        book = OrderBook('astro_swap')
+        # Start accepting orders
+        # book.submit(StopLoss('', 'bluna', 1, 'ust', price=1000))
+        # book.submit(LimitOrder('', 'ust', 100, 'luna', price=0.001))
+        task = asyncio.create_task(book.start(broker=True))
+        await task
 
         # Check token balance
         balance = await token_balance(from_token)
@@ -66,7 +75,7 @@ async def main():
         # exit()
 
         # Create, sign and broadcast transaction
-        tx = await wallet.create_and_sign_tx(msgs, memo='')
+        tx = await wallet.create_and_sign_tx(msgs, fee=fee, memo='')
         # pprint(tx)
         result = await wallet.broadcast(tx)
         # for log in result.logs:

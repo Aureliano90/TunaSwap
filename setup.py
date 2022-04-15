@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='TunaSwap',
-    version='0.3.0',
+    version='0.4.0',
     packages=find_packages(),
     url='https://github.com/Aureliano90/TunaSwap',
     license='GNU Affero General Public License v3.0',

@@ -8,13 +8,13 @@ class BlockTxBroadcastResult(_BlockTxBroadcastResult):
         return cls(tx['height'], tx['txhash'], tx['raw_log'], tx['gas_wanted'], tx['gas_used'], tx['logs'])
 
 
-def save_tx(tx: BlockTxBroadcastResult):
+def save_tx(tx: BlockTxBroadcastResult | TxInfo):
     with open('txs', 'a') as f:
         if tx:
             f.write(tx.to_json() + '\n')
 
 
-def retrieve_tx(txhash: str):
+def retrieve_tx(txhash: str) -> BlockTxBroadcastResult | None:
     with open('txs') as f:
         for tx in f.readlines():
             if tx:
@@ -116,8 +116,8 @@ def calculate_profit(tx: BlockTxBroadcastResult) -> Coins:
             token = from_contract(spent_event['contract_address'])
             token_spent = token_spent + Coins({token: spent_event['amount']})
     cost = Coins(uusd=gas_prices['uusd']).get('uusd') * tx.gas_wanted
-    profit = coin_received - coin_spent + token_received - token_spent - cost
-    return profit
+    coins = coin_received - coin_spent + token_received - token_spent - cost
+    return from_Dec(coins)
 
 
 def sum_profit():

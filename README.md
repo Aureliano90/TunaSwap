@@ -10,20 +10,21 @@ responsibilities for the use of the code, nor is warranty granted.
 
 ## Features
 
-* Support [TerraSwap](https://app.terraswap.io/Swap), [Astroport](https://app.astroport.fi/swap)
-  , [Loop](https://dex.loop.markets/) and native swaps using Terra's built-in market module
-* Fully async for best performance
-* Calculate token price on DEX trading pairs
+* Support [Terraswap](https://app.terraswap.io/Swap), [Astroport](https://app.astroport.fi/swap)
+  , [Loop](https://dex.loop.markets/), [Prism](https://prismprotocol.app/swap) and native swaps using Terra's built-in
+  market module
+* Fully async
 * Simulate and predict actual trading price locally
 * Find the best route with the least spread for a swap
-* Create, sign and broadcast swap transactions
+* Create, sign and broadcast transactions
+* Limit order and stop loss order
 
 ## Usage Examples
 
 Simulate swap result on a specific pair
 
 ```
->>> from dex import *
+>>> from order import *
 >>> await Pool('bLuna', 'Luna', 'terra_swap').simulate('LUNA', 100)
 ```
 
@@ -40,41 +41,35 @@ Find the best route with the least spread for a swap
 ```
 
 ```
-Route: ('nluna', 'psi', 'ust', 'luna', 'bluna')
-From 100.0 nluna To 89.795696 bluna on terra_swap
-Rate 0.897957 bluna per nluna
-Spread 10.338% Commission 10.353 bluna
+Route(100.0 nluna -> 191475.553937 psi -> 7275.843784 ust -> 89.299495 luna -> 89.618139 bluna on terra_swap)
 ```
 
-On the other hand, TerraSwap gives
+On the other hand, Terraswap gives
 
 <p align="center">
   <img width="400" height="600" src="https://raw.githubusercontent.com/Aureliano90/TunaSwap/main/multi_hop_swap.jpg" alt='multi_hop_swap'>
 </p>
 
-Check token balance
+`OrderBook` accepts and executes limit order or stop loss order.
 
 ```
->>> await token_balance(from_token)
+>>> book = OrderBook('astro_swap')
+>>> book.submit(StopLoss('', 'bluna', 1, 'ust', price=1000))
+>>> book.submit(LimitOrder('', 'ust', 100, 'luna', price=0.001))
+>>> task = asyncio.create_task(book.start(broker=True))
 ```
 
-Make transaction message
-
 ```
->>> msgs = await Dex('terra_swap').swap_msg('nLuna', 100, 'bLuna')
-```
-
-Estimate transaction fee
-
-```
->>> await estimate_fee(msgs, memo='')
+Accepting order. Example:
+limit bid=luna bid_size=1 ask=ust price=1000
 ```
 
 Create, sign and broadcast transaction
 
 ```
->>> tx = await create_and_sign_tx(msgs, memo='')
->>> result = await terra.tx.broadcast(tx)
+>>> msgs = await Dex('terra_swap').swap('nLuna', 100, 'bLuna')
+>>> tx = await wallet.create_and_sign_tx(msgs, memo='')
+>>> result = await wallet.broadcast(tx)
 ```
 
 Query pair info on DEX
@@ -108,6 +103,10 @@ Save seed phrases in a specific file or generate new ones.
 
 Set `testnet = False` in `consts.py` for mainnet.
 
+```
+python main.py
+```
+
 ## License
 
 This project is licensed under the AGPL-3.0 License.
@@ -120,7 +119,6 @@ service over a network, the complete source code of the modified version must be
 
 ## Support
 
-Improvements may be suggested, especially how to safely store and load seed phrases. Pull requests are welcome. Donation
-is appreciated.
+Improvements may be suggested. Pull requests are welcome. Donation is appreciated.
 
 Terra address: terra1dgl5w2zqeq9s6puuq9tflylj9zfpf5zfngsj30

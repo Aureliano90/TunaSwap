@@ -5,9 +5,9 @@ native_tokens = {'ust', 'luna'}
 
 if testnet:
     tokens_info = {'ust': {'denom': 'uusd', 'decimals': 6,
-                           'dex': ('terra_swap', 'astro_swap')},
+                           'dex': ('terra_swap', 'astro_swap', 'prism_swap')},
                    'luna': {'denom': 'uluna', 'decimals': 6,
-                            'dex': ('terra_swap', 'astro_swap')},
+                            'dex': ('terra_swap', 'astro_swap', 'prism_swap')},
                    'aust': {'contract': 'terra1ajt556dpzvjwl0kl5tzku3fc3p3knkg9mkv8jl',
                             'decimals': 6, 'dex': ('terra_swap',)},
                    'anc': {'contract': 'terra1747mad58h0w4y589y3sk84r5efqdev9q4r02pc',
@@ -28,14 +28,16 @@ if testnet:
                             'decimals': 6, 'dex': ('astro_swap',)},
                    'kuji': {'contract': 'terra1azu2frwn9a4l6gl5r39d0cuccs4h7xlu9gkmtd',
                             'decimals': 6, 'dex': ('astro_swap',)},
+                   'prism': {'contract': 'terra1cwle4remlf03mucutzhxfayvmdqsulx8xaahvy',
+                            'decimals': 6, 'dex': ('prism_swap',)},
                    'neb': {'contract': 'terra1aj5yepjnmhdvh0xz3dfqeh30wday6tapvaze47',
                             'decimals': 6, 'dex': ('astro_swap',)},
                    }
 else:
     tokens_info = {'ust': {'denom': 'uusd', 'decimals': 6,
-                           'dex': ('terra_swap', 'astro_swap', 'loop')},
+                           'dex': ('terra_swap', 'astro_swap', 'prism_swap', 'loop')},
                    'luna': {'denom': 'uluna', 'decimals': 6,
-                            'dex': ('terra_swap', 'astro_swap', 'loop')},
+                            'dex': ('terra_swap', 'astro_swap', 'prism_swap', 'loop')},
                    'aust': {'contract': 'terra1hzh9vpxhsk8253se0vv5jj6etdvxu3nv8z07zu',
                             'decimals': 6, 'dex': ('terra_swap', 'loop')},
                    'anc': {'contract': 'terra14z56l0fp2lsf86zy3hty2z47ezkhnthtr9yq76',
@@ -60,6 +62,8 @@ else:
                             'decimals': 6, 'dex': ('astro_swap',)},
                    'kuji': {'contract': 'terra1xfsdgcemqwxp4hhnyk4rle6wr22sseq7j07dnn',
                             'decimals': 6, 'dex': ('terra_swap', 'loop')},
+                   'prism': {'contract': 'terra1dh9478k2qvqhqeajhn75a2a7dsnf74y5ukregw',
+                            'decimals': 6, 'dex': ('prism_swap',)},
                    }
 
 
@@ -76,7 +80,7 @@ class Pair:
         return f"Pair{self.pair}"
 
     def __eq__(self, other):
-        return True if self.pair == other.pair else False
+        return self.pair == other.pair
 
     def __hash__(self):
         return hash(self.pair)
@@ -85,13 +89,17 @@ class Pair:
 if testnet:
     multicall = 'terra1z9p02s5fkasx5qxdaes6mfyf2gt3kxuhcsd4va'
 
+    dexes = {'native_swap', 'terra_swap', 'astro_swap', 'prism_swap'}
+
     # Router contract
     router = {'terra_swap': 'terra14z80rwpd0alzj4xdtgqdmcqt9wd9xj5ffd60wp',
-              'astro_swap': 'terra13wf295fj9u209nknz2cgqmmna7ry3d3j5kv7t4'}
+              'astro_swap': 'terra13wf295fj9u209nknz2cgqmmna7ry3d3j5kv7t4',
+              'prism_swap': 'terra1hn2dlykp8k5uspy6np5ks27060wnav6stmpvm5'}
 
     # Factory contract
     factory = {'terra_swap': 'terra18qpjm4zkvqnpjpw0zn0tdr8gdzvt8au35v45xf',
-               'astro_swap': 'terra15jsahkaf9p0qu8ye873p0u5z6g07wdad0tdq43'}
+               'astro_swap': 'terra15jsahkaf9p0qu8ye873p0u5z6g07wdad0tdq43',
+               'prism_swap': 'terra1g6x8r77h7sywyxc8zgfdyh39y770nvdm0vnl0r'}
 
     assert_limit_order = 'terra1z3sf42ywpuhxdh78rr5vyqxpaxa0dx657x5trs'
 
@@ -145,6 +153,8 @@ if testnet:
                            'fee': 0.003, 'tx_fee': 0, 'stable': False}
         },
         Pair('kuji', 'ust'): {
+            'terra_swap': {'contract': 'terra1mxy8lmf2jeyr7js7xvm046fssyfa5a9pm78fpn',
+                           'fee': 0.003, 'tx_fee': 0, 'stable': False},
             'astro_swap': {'contract': 'terra178na9upyad7gu4kulym9uamwafgrf922yln76l',
                            'fee': 0.003, 'tx_fee': 0, 'stable': False}
         },
@@ -152,18 +162,32 @@ if testnet:
             'astro_swap': {'contract': 'terra1u6tn733n3hw2gzkhqmqurajxjggfvf45qujq3d',
                            'fee': 0.003, 'tx_fee': 0, 'stable': False}
         },
+        Pair('prism', 'ust'): {
+            'prism_swap': {'contract': 'terra1lveas7a5k3ghxmn9gjn584pfpv7644fyuhhdv3',
+                           'fee': 0.003, 'tx_fee': 0, 'stable': False},
+        },
+        Pair('prism', 'luna'): {
+            'prism_swap': {'contract': 'terra1dhgw7ra0hajtn3smy4uvkyr7e6utewlw7afnly',
+                           'fee': 0.003, 'tx_fee': 0, 'stable': False},
+        },
     }
 else:
     multicall = 'terra1y60jx2jqh5qpmcnvgz3n0zg2p6ky4mr6ax2qa5'
 
+    dexes = {'native_swap', 'terra_swap', 'astro_swap', 'prism_swap', 'loop'}
+
     # Router contract
     router = {'terra_swap': 'terra19qx5xe6q9ll4w0890ux7lv2p4mf3csd4qvt3ex',
-              'astro_swap': 'terra16t7dpwwgx9n3lq6l6te3753lsjqwhxwpday9zx'}
+              'astro_swap': 'terra16t7dpwwgx9n3lq6l6te3753lsjqwhxwpday9zx',
+              'prism_swap': 'terra1yrc0zpwhuqezfnhdgvvh7vs5svqtgyl7pu3n6c'}
 
     # Factory contract
     factory = {'terra_swap': 'terra1ulgw0td86nvs4wtpsc80thv6xelk76ut7a7apj',
                'astro_swap': 'terra1fnywlw4edny3vw44x04xd67uzkdqluymgreu7g',
+               'prism_swap': 'terra1sfw7vvwhsczkeje22ramy76pj5cm9gtvvnzn94',
                'loop': 'terra16hdjuvghcumu6prg22cdjl96ptuay6r0hc6yns'}
+
+    assert_limit_order = 'terra1vs9jr7pxuqwct3j29lez3pfetuu8xmq7tk3lzk'
 
     # https://finder.extraterrestrial.money/mainnet/projects/terraswap
     # https://finder.extraterrestrial.money/mainnet/projects/astroport
@@ -257,5 +281,13 @@ else:
         Pair('kuji', 'aust'): {
             'loop': {'contract': 'terra1l60336rkawujnwk7lgfq5u0s684r99p3y8hx65',
                      'fee': 0.003, 'tx_fee': 0, 'stable': False},
-        }
+        },
+        Pair('prism', 'ust'): {
+            'prism_swap': {'contract': 'terra19d2alknajcngdezrdhq40h6362k92kz23sz62u',
+                           'fee': 0.003, 'tx_fee': 0, 'stable': False},
+        },
+        Pair('prism', 'luna'): {
+            'prism_swap': {'contract': 'terra1r38qlqt69lez4nja5h56qwf4drzjpnu8gz04jd',
+                           'fee': 0.003, 'tx_fee': 0, 'stable': False},
+        },
     }

@@ -1,7 +1,6 @@
 from typing import Any, Iterable, Tuple, Union
 from functools import wraps
 from heapq import heappop, heappush
-from terra_sdk.client.lcd import AsyncLCDClient, LCDClient
 from terra_sdk.core import AccAddress, Coin, Coins, Dec, TxLog
 from terra_sdk.core.market.msgs import MsgSwap
 from terra_sdk.core.wasm.msgs import MsgExecuteContract
@@ -39,20 +38,21 @@ def base64str_encode(obj: Any) -> str:
     return base64.b64encode(json.dumps(obj).encode('utf-8')).decode('utf-8')
 
 
-# Store your seed phrases in 'wall-e'
+seed_path = r'wall-e'
+# Store your seed phrases in 'seed_path'
 try:
-    with open('wall-e') as w:
+    with open(seed_path) as w:
         seed = w.readline()
 
     if len(seed.split()) > 1:
         # Encode plain seed phrases
-        with open('wall-e', 'w') as w:
+        with open(seed_path, 'w') as w:
             seed = base64str_encode(seed)
             w.write(seed)
 except OSError:
     seed = MnemonicKey().mnemonic
-    print(f"Generated new seed phrase in 'wall-e'. Go fund it.\n{seed}")
-    with open('wall-e', 'w') as w:
+    print(f"Generated new seed phrase in {seed_path}. Go fund it.\n{seed}")
+    with open(seed_path, 'w') as w:
         w.write(base64str_encode(seed))
     exit()
 
@@ -72,7 +72,7 @@ def from_Dec(
     elif isinstance(value, Coins):
         for coin in value:
             token = from_denom(coin.denom)
-            coin.amount = float(Dec.with_prec(int(coin.amount), tokens_info[token.lower()]['decimals']).to_short_str())
+            coin.amount = float(Dec.with_prec(int(coin.amount), tokens_info[token]['decimals']).to_short_str())
         return value
     else:
         raise ValueError
@@ -118,7 +118,7 @@ def convert_params(method):
 def get_denom(token: str) -> str:
     """Get denomination from token symbol
     """
-    return tokens_info[token]['denom'] if token in native_tokens else ''
+    return tokens_info[token]['denom'] if token in native_tokens else token
 
 
 def from_denom(denom: str) -> str:
@@ -127,12 +127,23 @@ def from_denom(denom: str) -> str:
     for token in native_tokens:
         if tokens_info[token]['denom'] == denom:
             return token
+    return denom
 
 
 def get_dex(token: str) -> str:
     """Get DEXes trading `token`
     """
     return tokens_info[token]['dex']
+
+
+def find_dex(s: str) -> str:
+    """Fuzzy Search
+    """
+    s = s.lower()
+    for dex in dexes:
+        if dex.find(s) >= 0:
+            return dex
+    return ''
 
 
 def get_contract(token: str) -> AccAddress | str:
@@ -152,14 +163,20 @@ def from_contract(contract: str) -> str:
             return token
 
 
-def asset_info(token: str) -> Dict:
+def asset_info(token: str, dex: str) -> Dict:
     """Asset info in swap message
     """
     token = token.lower()
-    if token in native_tokens:
-        return {'native_token': {'denom': get_denom(token)}}
+    if dex == 'prism_swap':
+        if token in native_tokens:
+            return {'native': get_denom(token)}
+        else:
+            return {'cw20': get_contract(token)}
     else:
-        return {'token': {'contract_addr': get_contract(token)}}
+        if token in native_tokens:
+            return {'native_token': {'denom': get_denom(token)}}
+        else:
+            return {'token': {'contract_addr': get_contract(token)}}
 
 
 def gas_fee(tx: Tx) -> Fee:
@@ -202,8 +219,8 @@ async def pair_query(
 ) -> Dict:
     """Query pair info on DEX
     """
-    msg = {'pair': {'asset_infos': [asset_info(token1),
-                                    asset_info(token2)]}}
+    msg = {'pair': {'asset_infos': [asset_info(token1, dex),
+                                    asset_info(token2, dex)]}}
     try:
         return await terra.wasm.contract_query(factory[dex], msg)
     except LCDResponseError as exc:
@@ -243,41 +260,13 @@ async def validate_pool_info():
 async def multicall_query(queries: List[Dict]) -> List[Dict]:
     """Aggregate multiple queries using Multicall contract
     """
-    aggregate = {'aggregate': {'queries': queries}}
-    res = await terra.wasm.contract_query(multicall, aggregate)
-    return res['return_data']
-
-
-async def block_height():
-    """Self-explanatory
-    """
-    return int((await terra.tendermint.block_info())['block']['header']['height'])
-
-
-async def set_new_block(evt: asyncio.Event, current_height: int):
-    new_height = asyncio.create_task(block_height())
-    if await new_height > current_height:
-        if not evt.is_set():
-            evt.set()
-
-
-async def listen_new_block():
-    """AsyncGenerator iterating over blocks
-    """
-    block_time = loop.time()
-    current_height = await block_height()
-    yield current_height
-    NewBlock = asyncio.Event()
-    while True:
-        await asyncio.sleep(6 - loop.time() + block_time)
-        NewBlock.clear()
-        try:
-            while not NewBlock.is_set():
-                await set_new_block(NewBlock, current_height)
-                await asyncio.sleep(0.1)
-            current_height += 1
-            block_time = loop.time()
-            # print(current_height, block_time)
-            yield current_height
-        except Exception:
-            pass
+    nmsgs = 0
+    tasks = []
+    while nmsgs < len(queries):
+        aggregate = {'aggregate': {'queries': queries[nmsgs:nmsgs + 20]}}
+        tasks.append(terra.wasm.contract_query(multicall, aggregate))
+        nmsgs += 20
+    res = []
+    for i in await asyncio.gather(*tasks):
+        res.extend(i['return_data'])
+    return res

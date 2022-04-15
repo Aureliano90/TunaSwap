@@ -5,41 +5,32 @@ import attr
 Hop = namedtuple('Hop', ['bid', 'ask', 'dex'])
 
 
-@attr.s(cmp=False)
+@attr.s
 class Vertex:
-    ask_size: Dec = attr.ib(converter=Dec)
+    ask_size: Dec = attr.ib(cmp=False, converter=Dec)
     spread: Dec = attr.ib(converter=Dec)
-    route: Tuple[str] = attr.ib(init=False)
-    hops: Tuple[Hop] = attr.ib(init=False)
-
-    def __eq__(self, other):
-        return True if self.spread == other.spread else False
-
-    def __gt__(self, other):
-        return True if self.spread > other.spread else False
-
-    def __lt__(self, other):
-        return True if self.spread < other.spread else False
+    route: Tuple[str] = attr.ib(cmp=False, init=False)
+    hops: Tuple[Hop] = attr.ib(cmp=False, init=False)
+    swaps: List[Swap] = attr.ib(cmp=False, factory=list)
 
 
 @attr.s(repr=False)
 class Route:
     route: Tuple[str] = attr.ib()
-    trade: Trade = attr.ib()
-    swaps: List[Trade] = attr.ib()
+    trade: Swap = attr.ib()
+    swaps: List[Swap] = attr.ib()
 
     def __repr__(self):
-        s = f"{self.trade.float_bid()} {self.trade.bid}"
-        for i in range(len(self.swaps)):
-            s += f" -> {self.swaps[i].float_ask()} {self.swaps[i].ask}"
-        return f"Route({s} on {self.trade.dex})"
+        strings = [f"{self.trade.float_bid()} {self.trade.bid}"]
+        strings += [f"{swap.float_ask()} {swap.ask}" for swap in self.swaps]
+        return f"Route({' -> '.join(strings)} on {self.trade.dex})"
 
 
 class Dex:
     def __init__(self, dex: str):
-        self.dex = dex
-        if dex in router:
-            self.router = AccAddress(router[dex])
+        self.dex = find_dex(dex)
+        if self.dex in router:
+            self.router = AccAddress(router[self.dex])
         else:
             self.router = AccAddress('')
 
@@ -82,17 +73,32 @@ class Dex:
         assert self.dex in get_dex(ask), f"{ask} not trading on {self.dex}"
         return bid, ask
 
+    def pools_from_routes(self, routes: List[Tuple]) -> Dict[Pair | str, Pool]:
+        pools = {}
+        for route in routes:
+            for i in range(len(route) - 1):
+                pair = Pair(route[i], route[i + 1])
+                if pair not in pools:
+                    pools[pair] = Pool(pair, self.dex)
+                if pair == Pair('luna', 'ust'):
+                    if 'native_swap' not in pools:
+                        pools['native_swap'] = Pool('luna', 'ust', 'native_swap')
+        return pools
+
     @convert_params
     async def dijkstra_routing(
             self,
             bid: str,
             bid_size: Numeric,
-            ask: str
+            ask: str,
+            pools=None
     ) -> Route | None:
         """Find the route with the least spread using Dijkstra's algorithm
 
         :return: Route(route, trade, swaps)
         """
+        if pools is None:
+            pools = {}
         bid, ask = self.assertion(bid, ask)
 
         routes = self.dfs(bid, ask)
@@ -103,18 +109,11 @@ class Dex:
         for route in routes:
             graph.update(route)
         # Connected edges in the graph
-        pools = dict()
-        for route in routes:
-            for i in range(len(route) - 1):
-                pair = Pair(route[i], route[i + 1])
-                if pair not in pools:
-                    pools[pair] = Pool(pair, self.dex)
-                if pair == Pair('luna', 'ust'):
-                    pools['native_swap'] = Pool('luna', 'ust', 'native_swap')
-        # Query liquidity in relevant pairs
-        await multi_pools_query(pools.values())
+        if not pools:
+            pools = self.pools_from_routes(routes)
+            # Query liquidity in relevant pairs
+            await multi_pools_query(pools.values())
 
-        native = False
         min_vertex = Vertex(bid_size, Dec(0))
         min_vertex.route = (bid,)
         heap = [min_vertex]
@@ -132,43 +131,35 @@ class Dex:
             for neighbor in self.adjacent(next):
                 if neighbor not in visited and neighbor in graph:
                     pair = Pair(next, neighbor)
-                    trade = await pools[pair].simulate(next, min_vertex.ask_size)
+                    swap = await pools[pair].simulate(next, min_vertex.ask_size)
                     if pair == Pair('luna', 'ust'):
                         native_swap = await pools['native_swap'].simulate(next, min_vertex.ask_size)
-                        if native_swap.ask_size > trade.ask_size:
-                            trade = native_swap
-                            native = True
-                    spread = spreads[next] + trade.spread - spreads[next] * trade.spread
+                        if native_swap.ask_size > swap.ask_size:
+                            swap = native_swap
+                    spread = spreads[next] + swap.spread - spreads[next] * swap.spread
                     if spread < spreads[neighbor]:
                         spreads[neighbor] = spread
-                        vertex = Vertex(trade.ask_size, spread)
+                        vertex = Vertex(swap.ask_size, spread)
                         vertex.route = min_vertex.route + (neighbor,)
+                        vertex.swaps = min_vertex.swaps + [swap]
                         heappush(heap, vertex)
 
-        ask_size = expected = bid_size
-        route: Tuple[str] = min_vertex.route
-        swaps: List[Trade] = []
-        for i in range(len(route) - 1):
-            pair = Pair(route[i], route[i + 1])
-            if native and pair == Pair('luna', 'ust'):
-                trade = await pools['native_swap'].simulate(route[i], ask_size)
-            else:
-                trade = await pools[pair].simulate(route[i], ask_size)
-            ask_size = trade.ask_size
-            swaps.append(trade)
-            expected *= await pools[pair].price(route[i])
-        spread = (expected - ask_size) / expected
-        commission = expected * spread
-        trade = Trade(self.dex,
-                      bid,
-                      bid_size,
-                      ask,
-                      ask_size,
-                      spread,
-                      commission)
-        return Route(route=route,
-                     trade=trade,
-                     swaps=swaps)
+        ask_size = min_vertex.swaps[-1].ask_size
+        expected = bid_size
+        for swap in min_vertex.swaps:
+            expected *= await pools[Pair(swap.bid, swap.ask)].price(swap.bid)
+        commission = expected - ask_size
+        spread = commission / expected
+        swap = Swap(self.dex,
+                    bid,
+                    bid_size,
+                    ask,
+                    ask_size,
+                    spread,
+                    commission)
+        return Route(route=min_vertex.route,
+                     trade=swap,
+                     swaps=min_vertex.swaps)
 
     async def route_to_msg(
             self,
@@ -179,7 +170,7 @@ class Dex:
         """
         if routing is None:
             print('Impossible swap.')
-            exit()
+            raise ValueError
         trade, route, swaps = routing.trade, routing.route, routing.swaps
         bid, bid_size, ask, ask_size = trade.bid, trade.bid_size, trade.ask, trade.ask_size
 
@@ -193,16 +184,16 @@ class Dex:
                     else:
                         return await self.swap_msg(bid, bid_size, ask)
             operations = []
-            for i in range(len(swaps)):
-                if swaps[i].dex == 'native_swap':
+            for swap in swaps:
+                if swap.dex == 'native_swap':
                     operation = {'native_swap': {
-                        'offer_denom': get_denom(swaps[i].bid),
-                        'ask_denom': get_denom(swaps[i].ask)
+                        'offer_denom': get_denom(swap.bid),
+                        'ask_denom': get_denom(swap.ask)
                     }}
                 else:
-                    operation = {swaps[i].dex: {
-                        'offer_asset_info': asset_info(swaps[i].bid),
-                        'ask_asset_info': asset_info(swaps[i].ask)
+                    operation = {swap.dex: {
+                        'offer_asset_info': asset_info(swap.bid, swap.dex),
+                        'ask_asset_info': asset_info(swap.ask, swap.dex)
                     }}
                 operations.append(operation)
             msg = {
@@ -225,24 +216,15 @@ class Dex:
                         'contract': self.router,
                         'amount': bid_size.whole,
                         'msg': base64str_encode(msg)
-                    }
-                }
+                    }}
                 return [MsgExecuteContract(wallet.key.acc_address,
                                            get_contract(bid),
                                            execute_msg)]
         # Loop doesn't have a router.
         else:
-            pools = [Pool(route[i], route[i + 1], swaps[i].dex) for i in range(len(swaps))]
-            await multi_pools_query(pools)
-
             msgs = []
-            for i in range(len(swaps)):
-                trade = await pools[i].simulate(route[i], bid_size)
-                minimum_receive = trade.ask_size - 1
-                msgs += await pools[i].trade_to_msg(trade, minimum_receive)
-                # There may be leftovers.
-                # Next input = last minimum_receive
-                bid_size = minimum_receive
+            for swap in swaps:
+                msgs.extend(await Pool(swap).swap_to_msg(swap, swap.ask_size))
             return msgs
 
     @convert_params
@@ -258,12 +240,3 @@ class Dex:
         bid, ask = self.assertion(bid, ask)
         routing = await self.dijkstra_routing(bid, bid_size, ask)
         return await self.route_to_msg(routing, minimum_receive)
-
-    @convert_params
-    async def limit_order(
-            self,
-            bid: str,
-            bid_size: Numeric,
-            bid_price: Numeric
-    ):
-        pass
