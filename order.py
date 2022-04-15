@@ -17,6 +17,7 @@ class LimitOrder(Swap):
         super(LimitOrder, self).__init__(dex, bid, bid_size, ask, ask_size)
         self.status = 'open'
         self.result = None
+        self.triggered = False
 
     def __repr__(self):
         s = f"limit order: {self.float_bid()} {self.bid} -> {self.float_ask()} {self.ask} on {self.dex}\n" \
@@ -32,7 +33,6 @@ class LimitOrder(Swap):
 
 
 class StopLoss(LimitOrder):
-    triggered = attr.ib(default=False)
 
     def __repr__(self):
         s = f"stop order: {self.float_bid()} {self.bid} -> {self.float_ask()} {self.ask} on {self.dex}\n" \
@@ -105,8 +105,8 @@ class OrderBook:
             raise
 
     async def broker(self):
+        print('Accepting order. Example:\nlimit bid=luna bid_size=1 ask=ust price=1000')
         while True:
-            print('Accepting order. Example:\nlimit bid=luna bid_size=1 ask=ust price=1000')
             command = await asyncio.ensure_future(loop.run_in_executor(None, input))
             args = command.split()
             if not args:
