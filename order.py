@@ -6,10 +6,8 @@ import attr
 class LimitOrder(Swap):
     def __init__(self, dex: str, bid: str, bid_size: Numeric, ask: str, ask_size=0, price=0):
         bid, ask = bid.lower(), ask.lower()
-        if not isinstance(bid_size, Dec):
-            bid_size = to_Dec(bid_size, bid)
-        if not isinstance(ask_size, Dec):
-            ask_size = to_Dec(ask_size, ask)
+        bid_size = to_Dec(bid_size, bid)
+        ask_size = to_Dec(ask_size, ask)
         if price == 0:
             assert ask_size != Dec(0)
             self.price = ask_size / bid_size
@@ -90,8 +88,8 @@ class OrderBook:
                 order.status = 'filled'
                 order.result = res
                 for coin in calculate_profit(res):
-                    if order.ask == from_denom(coin.denom) or order.ask == coin.denom:
-                        order.ask_size = coin.amount
+                    if order.ask == (token := from_denom(coin.denom)):
+                        order.ask_size = to_Dec(int(coin.amount), token)
                 print(order)
                 save_tx(res)
                 self.filled.append(order)

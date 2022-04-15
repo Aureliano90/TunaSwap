@@ -70,10 +70,12 @@ def from_Dec(
     if isinstance(value, Dec):
         return float(Dec.with_prec(int(value), tokens_info[token.lower()]['decimals']).to_short_str())
     elif isinstance(value, Coins):
+        coins = []
         for coin in value:
             token = from_denom(coin.denom)
-            coin.amount = float(Dec.with_prec(int(coin.amount), tokens_info[token]['decimals']).to_short_str())
-        return value
+            amount = Dec.with_prec(int(coin.amount), tokens_info[token]['decimals'])
+            coins.append(Coin(token, amount))
+        return Coins(coins)
     else:
         raise ValueError
 
@@ -104,8 +106,7 @@ def convert_params(method):
             *args,
             **kwargs):
         bid = bid.lower()
-        if not isinstance(bid_size, Dec):
-            bid_size = to_Dec(bid_size, bid)
+        bid_size = to_Dec(bid_size, bid)
         return method(self,
                       bid,
                       bid_size,
