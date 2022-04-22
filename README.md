@@ -93,7 +93,7 @@ Validate local pairs' info with blockchain
 
 ## Installation
 
-Install Python 3.8+ and required packages.
+Install Python 3.10+ and required packages.
 
 ```
 pip install -r requirements.txt
