@@ -1,4 +1,4 @@
-from order import *
+from src.order import *
 import sys
 
 assert sys.version_info >= (3, 8), print('Python version >=3.8 is required.\nYour Python version: ', sys.version)
@@ -72,7 +72,7 @@ async def main():
         fee = await wallet.estimate_fee(msgs, memo='')
         if fee:
             print(f'{fee.amount=}')
-        # exit()
+        exit()
 
         # Create, sign and broadcast transaction
         tx = await wallet.create_and_sign_tx(msgs, fee=fee, memo='')

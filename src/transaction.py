@@ -1,27 +1,40 @@
-from terra import *
-from terra_sdk.core.broadcast import BlockTxBroadcastResult as _BlockTxBroadcastResult
+from src.terra import *
+from pysondb import getDb
+
+txs_db = getDb('txs.json')
 
 
-class BlockTxBroadcastResult(_BlockTxBroadcastResult):
+class TxResult(BlockTxBroadcastResult):
+    def to_data(self) -> Dict:
+        return json.loads(self.to_json())
+
     @classmethod
-    def from_json(cls, tx: Dict):
-        return cls(tx['height'], tx['txhash'], tx['raw_log'], tx['gas_wanted'], tx['gas_used'], tx['logs'])
+    def from_data(cls, tx: Dict):
+        return cls(
+            tx['height'],
+            tx['txhash'],
+            tx['raw_log'],
+            tx['gas_wanted'],
+            tx['gas_used'],
+            tx['logs'])
 
 
-def save_tx(tx: BlockTxBroadcastResult | TxInfo):
-    with open('txs', 'a') as f:
-        if tx:
-            f.write(tx.to_json() + '\n')
+def save_tx(tx: TxResult | TxInfo):
+    data = TxResult.to_data(tx)
+    if 'code' not in data:
+        data['code'], data['codespace'] = 0, ''
+    if 'data' not in data:
+        data['data'] = None
+    if 'info' not in data:
+        data['info'] = None
+    if 'tx' in data:
+        data.pop('tx')
+    txs_db.add(data)
 
 
-def retrieve_tx(txhash: str) -> BlockTxBroadcastResult | None:
-    with open('txs') as f:
-        for tx in f.readlines():
-            if tx:
-                tx = json.loads(tx)
-                if tx['txhash'] == txhash:
-                    return BlockTxBroadcastResult.from_json(tx)
-    return None
+def retrieve_tx(txhash: str) -> TxResult | None:
+    for res in txs_db.getByQuery({'txhash': txhash}):
+        return TxResult.from_data(res)
 
 
 def filter_tx_log_by_type(
@@ -82,9 +95,9 @@ def filter_tx_log_by_order(
     return {}
 
 
-def calculate_profit(tx: BlockTxBroadcastResult) -> Coins:
-    if isinstance(tx, dict):
-        tx = BlockTxBroadcastResult.from_json(tx)
+def calculate_profit(tx: TxResult | Dict) -> Coins:
+    if isinstance(tx, Dict):
+        tx = TxResult.from_data(tx)
     try:
         logs = tx.logs
     except AttributeError:
@@ -122,8 +135,6 @@ def calculate_profit(tx: BlockTxBroadcastResult) -> Coins:
 
 def sum_profit():
     profit = Coins()
-    with open('txs') as f:
-        for tx in f.readlines():
-            tx = json.loads(tx)
-            profit = profit + calculate_profit(tx)
+    for tx in txs_db.getAll():
+        profit = profit + calculate_profit(tx)
     pprint(profit)
