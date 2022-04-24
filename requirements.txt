@@ -1,3 +1,4 @@
 requests~=2.27.1
-terra_sdk~=2.0.5
+terra_sdk>=2.0.6
 attrs~=21.4.0
+pysondb~=1.6.4

@@ -45,10 +45,19 @@ async def main():
         # Find and wrap
         # msgs = await Dex('terra_swap').swap(from_token, bid, to_token)
 
+        # bank = await Anchor()
+        # msgs = await bank.deposit_stable(100)
+        # msgs = await bank.redeem_stable(100)
+        # msgs = await bank.deposit_collateral('bluna', 10)
+        # msgs = await bank.borrow_stable(4000)
+        # msgs = await bank.repay_stable(5000)
+        # await wallet.create_and_broadcast(msgs)
+        # await bank.monitor()
+
         book = OrderBook('astro_swap')
         # Start accepting orders
-        # book.submit(StopLoss('', 'bluna', 1, 'ust', price=1000))
-        # book.submit(LimitOrder('', 'ust', 100, 'luna', price=0.001))
+        book.submit(StopLoss('', 'ust', 1000, 'luna', ask_size=1))
+        book.submit(LimitOrder('', 'luna', 1, 'ust', price=1000))
         task = asyncio.create_task(book.start(broker=True))
         await task
 

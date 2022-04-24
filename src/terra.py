@@ -23,7 +23,7 @@ else:
 terra = AsyncLCDClient(chain_id=chain_id,
                        url=light_clinet_address,
                        gas_prices=Coins(uusd=gas_prices['uusd']),
-                       gas_adjustment='1.2')
+                       gas_adjustment=1.2)
 
 
 def base64str_decode(msg: str) -> Any:
@@ -140,11 +140,11 @@ def get_dex(token: str) -> str:
 def find_dex(s: str) -> str:
     """Fuzzy Search
     """
-    s = s.lower()
+    l = s.lower()
     for dex in dexes:
-        if dex.find(s) >= 0:
+        if dex.find(l) >= 0:
             return dex
-    return ''
+    return s
 
 
 def get_contract(token: str) -> AccAddress | str:
@@ -164,28 +164,6 @@ def from_contract(contract: str) -> str:
             return token
 
 
-def asset_info(token: str, dex: str) -> Dict:
-    """Asset info in swap message
-    """
-    token = token.lower()
-    if dex == 'prism_swap':
-        if token in native_tokens:
-            return {'native': get_denom(token)}
-        else:
-            return {'cw20': get_contract(token)}
-    else:
-        if token in native_tokens:
-            return {'native_token': {'denom': get_denom(token)}}
-        else:
-            return {'token': {'contract_addr': get_contract(token)}}
-
-
-def gas_fee(tx: Tx) -> Fee:
-    """Self-explanatory
-    """
-    return tx.auth_info.fee
-
-
 async def token_balance(token: str) -> Dec:
     """Query `token` balance
     """
@@ -195,10 +173,10 @@ async def token_balance(token: str) -> Dec:
             coins, _ = await terra.bank.balance(wallet.key.acc_address)
             return coins.get(get_denom(token)).amount
         else:
-            msg = {'balance': {'address': wallet.key.acc_address}}
+            msg = ABI.balance(wallet.key.acc_address)
             return Dec((await terra.wasm.contract_query(get_contract(token), msg))['balance'])
     except LCDResponseError as exc:
-        print(exc)
+        print(f"Exception in {token_balance.__name__}\n{exc}")
         return Dec(0)
 
 
@@ -209,7 +187,7 @@ async def coins_balance() -> Coins | None:
         coins, _ = await terra.bank.balance(wallet.key.acc_address)
         return coins
     except LCDResponseError as exc:
-        print(exc)
+        print(f"Exception in {coins_balance.__name__}\n{exc}")
         return None
 
 
@@ -220,12 +198,12 @@ async def pair_query(
 ) -> Dict:
     """Query pair info on DEX
     """
-    msg = {'pair': {'asset_infos': [asset_info(token1, dex),
-                                    asset_info(token2, dex)]}}
+    dex = find_dex(dex)
+    msg = ABI.pair(Pair(token1, token2), dex)
     try:
         return await terra.wasm.contract_query(factory[dex], msg)
     except LCDResponseError as exc:
-        print(exc)
+        print(f"Exception in {pair_query.__name__}\n{exc}")
         raise
 
 
@@ -241,8 +219,7 @@ async def validate_pool_info():
         for dex, info in pools_info[pair].items():
             if dex != 'native_swap':
                 if isinstance(result[(pair, dex)], Exception):
-                    print(f"{pair} isn't registered in {dex} factory contract."
-                          f"Doesn't mean it's fake.")
+                    print(f"{pair} isn't registered in {dex} factory contract. Doesn't mean it's fake.")
                     continue
                 assert result[(pair, dex)]['contract_addr'] == info['contract'], \
                     f"Incorrect {pair} contract on {dex}\n" \
@@ -258,16 +235,227 @@ async def validate_pool_info():
     print("Validated all pools' info")
 
 
-async def multicall_query(queries: List[Dict]) -> List[Dict]:
+class ABI(Dict):
+    """ABI for WASM messages
+    """
+
+    @classmethod
+    def self(cls, query: str):
+        return cls({query: {}})
+
+    @classmethod
+    def balance(cls, address: AccAddress):
+        return cls({
+            'balance': {
+                'address': address
+            }
+        })
+
+    @classmethod
+    def send(
+            cls,
+            contract: AccAddress,
+            amount: Dec,
+            msg: Dict
+    ):
+        return cls({
+            'send': {
+                'contract': contract,
+                'amount': amount.whole,
+                'msg': base64str_encode(msg)
+            }
+        })
+
+    @classmethod
+    def asset_info(cls, token: str, dex: str):
+        token = token.lower()
+        if dex == 'prism_swap':
+            if token in native_tokens:
+                return cls({'native': get_denom(token)})
+            else:
+                return cls({'cw20': get_contract(token)})
+        else:
+            if token in native_tokens:
+                return cls({'native_token': {'denom': get_denom(token)}})
+            else:
+                return cls({'token': {'contract_addr': get_contract(token)}})
+
+    @classmethod
+    def pair(cls, pair: Pair, dex: str):
+        return cls({
+            'pair': {
+                'asset_infos': [ABI.asset_info(pair.pair[0], dex),
+                                ABI.asset_info(pair.pair[1], dex)]
+            }
+        })
+
+    @classmethod
+    def assert_limit_order(
+            cls,
+            ask_denom: str,
+            offer_coin: Coin,
+            minimum_receive: Dec
+    ):
+        return cls({
+            'assert_limit_order': {
+                'ask_denom': ask_denom,
+                'offer_coin': {
+                    'denom': offer_coin.denom,
+                    'amount': offer_coin.amount.whole if isinstance(offer_coin.amount, Dec) else f'{offer_coin.amount}'
+                },
+                'minimum_receive': minimum_receive.whole
+            }
+        })
+
+    @classmethod
+    def swap(
+            cls,
+            dex: str,
+            bid: str,
+            bid_size: Dec,
+            belief_price: Dec,
+            spread: Dec
+    ):
+        return cls({
+            'swap': {
+                'offer_asset': {
+                    'info': ABI.asset_info(bid, dex),
+                    'amount': bid_size.whole
+                },
+                'belief_price': belief_price.to_short_str(),  # optional
+                'max_spread': spread.to_short_str(),  # optional
+                # 'to': wallet.key.acc_address
+            }
+        })
+
+    @classmethod
+    def native_swap(cls, bid: str, ask: str):
+        return cls({
+            'native_swap': {
+                'offer_denom': get_denom(bid),
+                'ask_denom': get_denom(ask)
+            }
+        })
+
+    @classmethod
+    def dex_swap(cls, dex: str, bid: str, ask: str):
+        return cls({
+            dex: {
+                'offer_asset_info': ABI.asset_info(bid, dex),
+                'ask_asset_info': ABI.asset_info(ask, dex)
+            }
+        })
+
+    @classmethod
+    def execute_swap_operations(
+            cls,
+            bid_size: Dec,
+            minimum_receive: Dec,
+            max_spread: str,
+            operations: List[Dict]
+    ):
+        return cls({
+            'execute_swap_operations': {
+                'offer_amount': bid_size.whole,
+                'minimum_receive': minimum_receive.whole,
+                'max_spread': max_spread,
+                'operations': operations
+            }
+        })
+
+    @classmethod
+    def lock_collateral(cls, collateral: str, amount: Dec):
+        return cls({
+            'lock_collateral': {
+                'collaterals': [
+                    [
+                        tokens_info[collateral]['contract'],
+                        amount.whole
+                    ]
+                ]
+            }
+        })
+
+    @classmethod
+    def unlock_collateral(cls, collateral: str, amount: Dec):
+        return cls({
+            'unlock_collateral': {
+                'collaterals': [
+                    [
+                        tokens_info[collateral]['contract'],
+                        amount.whole
+                    ]
+                ]
+            }
+        })
+
+    @classmethod
+    def withdraw_collateral(cls, amount: Dec):
+        return cls({
+            'withdraw_collateral': {
+                'amount': amount.whole
+            }
+        })
+
+    @classmethod
+    def collaterals(cls, borrower: AccAddress):
+        return cls({
+            'collaterals': {
+                'borrower': borrower
+            }
+        })
+
+    @classmethod
+    def borrow_limit(cls, borrower: AccAddress):
+        return cls({
+            'borrow_limit': {
+                'borrower': borrower
+            }
+        })
+
+    @classmethod
+    def borrower_info(cls, borrower: AccAddress):
+        return cls({
+            'borrower_info': {
+                'borrower': borrower
+            }
+        })
+
+    @classmethod
+    def borrow_stable(cls, amount: Dec):
+        return cls({
+            'borrow_stable': {
+                'borrow_amount': amount.whole
+            }
+        })
+
+    class multicall_query(Dict):
+        def __init__(self, contract: AccAddress, query: Dict):
+            super().__init__(address=contract, data=base64str_encode(query), require_success=True)
+
+    @classmethod
+    def aggregate(cls, queries: List[multicall_query]):
+        return cls({
+            'aggregate': {
+                'queries': queries
+            }
+        })
+
+
+async def multicall_query(queries: List[ABI.multicall_query]) -> List[Dict]:
     """Aggregate multiple queries using Multicall contract
     """
     nmsgs = 0
     tasks = []
     while nmsgs < len(queries):
-        aggregate = {'aggregate': {'queries': queries[nmsgs:nmsgs + 20]}}
+        aggregate = ABI.aggregate(queries[nmsgs:nmsgs + 20])
         tasks.append(terra.wasm.contract_query(multicall, aggregate))
         nmsgs += 20
+    msgs = []
+    for response in await asyncio.gather(*tasks):
+        msgs.extend(response['return_data'])
     res = []
-    for i in await asyncio.gather(*tasks):
-        res.extend(i['return_data'])
+    for msg in msgs:
+        assert msg['success']
+        res.append(base64str_decode(msg['data']))
     return res

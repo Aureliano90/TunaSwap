@@ -7,6 +7,7 @@ from terra_sdk.core.fee import Fee
 from terra_sdk.core.msg import Msg
 from terra_sdk.exceptions import LCDResponseError
 from terra_sdk.key.key import Key
+from aiohttp import ClientError
 import asyncio
 
 
@@ -41,6 +42,8 @@ class async_property(property):
 
 
 class BlockChain:
+    __slots__ = ('current_height', 'lcd', 'new_block_evt')
+
     def __init__(self, lcd: AsyncLCDClient):
         self.lcd = lcd
         self.current_height = 0
@@ -51,7 +54,7 @@ class BlockChain:
         """
         try:
             return int((await self.lcd.tendermint.block_info())['block']['header']['height'])
-        except LCDResponseError:
+        except LCDResponseError or ClientError:
             return 0
 
     async def set_new_block(self):
@@ -85,6 +88,7 @@ class AsyncWallet(_AsyncWallet):
     """Custom AsyncWallet initialized by `await AsyncWallet(lcd, key)`\n
     `wallet.sequence` is automatically incremented.
     """
+    __slots__ = ('_account_number', 'blockchain', 'key', 'lcd', '_sequence')
     account_number = async_property(_AsyncWallet.account_number)
     # Nonce
     sequence = async_property(_AsyncWallet.sequence)
@@ -115,7 +119,7 @@ class AsyncWallet(_AsyncWallet):
     async def estimate_fee(
             self,
             msgs: List[Msg],
-            **options
+            **kwargs
     ) -> Fee | None:
         """Estimate gas fee
         """
@@ -126,25 +130,25 @@ class AsyncWallet(_AsyncWallet):
                 public_key=self.key.public_key,
             )]
         try:
-            return await self.lcd.tx.estimate_fee(sigOpt, CreateTxOptions(msgs=msgs, **options))
+            return await self.lcd.tx.estimate_fee(sigOpt, CreateTxOptions(msgs=msgs, **kwargs))
         except LCDResponseError as exc:
             print(f"Exception in {type(self).__name__}.estimate_fee\n{exc}")
             if 'account sequence mismatch' in exc.message:
                 await self.account_number_and_sequence()
                 sigOpt[0].sequence = self.sequence
-                return await self.lcd.tx.estimate_fee(sigOpt, CreateTxOptions(msgs=msgs, **options))
+                return await self.lcd.tx.estimate_fee(sigOpt, CreateTxOptions(msgs=msgs, **kwargs))
             return None
 
     async def create_and_sign_tx(
             self,
             msgs: List[Msg],
-            **options: Dict
+            **kwargs
     ) -> Tx | None:
         """Self-explanatory
         """
         if not self.account_number or not self.sequence:
             await self.account_number_and_sequence()
-        tx_options = CreateTxOptions(msgs=msgs, **options)
+        tx_options = CreateTxOptions(msgs=msgs, **kwargs)
         tx_options.account_number = self.account_number
         tx_options.sequence = self.sequence
         try:
@@ -167,15 +171,26 @@ class AsyncWallet(_AsyncWallet):
             self.sequence += 1
             result: BlockTxBroadcastResult = await self.lcd.tx.broadcast(tx)
             if hasattr(result, 'code') and result.code:
-                self.sequence -= 1
                 print(f"Transaction failed.\nCode: {result.code} Codespace: {result.codespace}")
                 print(f"Raw log: {result.raw_log}")
+                if result.code == 11:
+                    return await self.create_and_broadcast(tx.body.messages)
                 return None
             else:
                 return result
         except LCDResponseError as exc:
             print(f"Exception in {type(self).__name__}.broadcast\n{exc}")
             return await self.tx_info(await self.lcd.tx.hash(tx))
+
+    async def create_and_broadcast(
+            self,
+            msgs: List[Msg],
+            **kwargs
+    ) -> BlockTxBroadcastResult | TxInfo | None:
+        if 'fee' not in kwargs:
+            kwargs['fee'] = await self.estimate_fee(msgs, **kwargs)
+        tx = await self.create_and_sign_tx(msgs, **kwargs)
+        return await self.broadcast(tx)
 
     async def tx_info(
             self,
@@ -186,11 +201,11 @@ class AsyncWallet(_AsyncWallet):
             try:
                 result: TxInfo = await self.lcd.tx.tx_info(tx_hash)
                 if hasattr(result, 'code') and result.code:
-                    self.sequence -= 1
                     print(f"Transaction failed.\nCode: {result.code} Codespace: {result.codespace}")
                     print(f"Raw log: {result.rawlog}")
                     return None
                 else:
+                    self.sequence -= 1
                     return result
             except LCDResponseError as exc:
                 code = int(exc.response.status)

@@ -9,7 +9,7 @@ def quadratic_root(a: float, b: float, c: float):
     return (-b + s) * a, (-b - s) * a
 
 
-@attr.s(repr=False)
+@attr.s(repr=False, slots=True)
 class Swap:
     """Dataclass of a swap
     """
@@ -40,6 +40,9 @@ class Swap:
 class Pool:
     """Class representing an AMM liquidity pool
     """
+    __slots__ = ('amp', 'amount1', 'amount2', 'contract', 'dex', 'fee', 'last_query', 'luna_ust', 'pair', 'stable',
+                 'token1', 'token2', 'tx_fee')
+
     def __init__(self, *args):
         # Initialize with a Pair
         if isinstance(args[0], Pair):
@@ -109,20 +112,20 @@ class Pool:
         c = LCDClient(chain_id=chain_id, url=light_clinet_address)
         if dex:
             try:
-                msg = {'pair': {'asset_infos': [asset_info(self.token1, dex), asset_info(self.token2, dex)]}}
+                msg = ABI.pair(self.pair, dex)
                 asset_infos = c.wasm.contract_query(factory[dex], msg)
             except LCDResponseError as exc:
-                print(exc)
+                print(f"Exception in {type(self).__name__}.pair_info\n{exc}")
                 raise
         else:
             # Query all factory contracts
             for dex in factory:
                 try:
-                    msg = {'pair': {'asset_infos': [asset_info(self.token1, dex), asset_info(self.token2, dex)]}}
+                    msg = ABI.pair(self.pair, dex)
                     asset_infos = c.wasm.contract_query(factory[dex], msg)
                     break
                 except LCDResponseError as exc:
-                    print(exc)
+                    print(f"Exception in {type(self).__name__}.pair_info\n{exc}")
             else:
                 print('Pair is not found on any DEX.')
                 raise ValueError
@@ -175,38 +178,27 @@ class Pool:
         else:
             if self.stable:
                 pool, config = await multicall_query(self.multicall_query_msg())
-                assert pool['success'] and config['success']
-                pool = base64str_decode(pool['data'])
-                config = base64str_decode(config['data'])
                 self.amp = Dec(base64str_decode(config['params'])['amp'])
             else:
-                pool = await terra.wasm.contract_query(self.contract, {'pool': {}})
+                pool = await terra.wasm.contract_query(self.contract, ABI.self('pool'))
             self.amount1 = self._token_amount(pool, self.token1)
             self.amount2 = self._token_amount(pool, self.token2)
 
-    def multicall_query_msg(self) -> List[Dict]:
+    def multicall_query_msg(self) -> List[ABI.multicall_query]:
         """Query message
         """
         assert self.dex != 'native_swap'
-        pool = {'address': self.contract,
-                'data': base64str_encode({'pool': {}}),
-                'require_success': True
-                }
+        pool = ABI.multicall_query(self.contract, ABI.self('pool'))
         msgs = [pool]
         if self.stable:
-            config = {'address': self.contract,
-                      'data': base64str_encode({'config': {}}),
-                      'require_success': True
-                      }
+            config = ABI.multicall_query(self.contract, ABI.self('config'))
             msgs.append(config)
         return msgs
 
     def parse_multicall_res(self, msgs: List[Dict]):
         """Update pool information
         """
-        for msg in msgs:
-            assert msg['success']
-            data = base64str_decode(msg['data'])
+        for data in msgs:
             if 'assets' in data:
                 self.amount1 = self._token_amount(data, self.token1)
                 self.amount2 = self._token_amount(data, self.token2)
@@ -379,57 +371,32 @@ class Pool:
                     minimum_receive = ask_size * (1 - slippage)
                 else:
                     return await self.swap(bid, bid_size)
-            msg = {
-                'assert_limit_order': {
-                    'ask_denom': ask_denom,
-                    'offer_coin': {
-                        'denom': offer_coin.denom,
-                        'amount': bid_size.whole
-                    },
-                    'minimum_receive': minimum_receive.whole
-                }}
             assert_msg = MsgExecuteContract(wallet.key.acc_address,
                                             assert_limit_order,
-                                            msg,
+                                            ABI.assert_limit_order(ask_denom, offer_coin, minimum_receive),
                                             Coins([offer_coin]))
-            msg_swap = MsgSwap(wallet.key.acc_address, offer_coin, ask_denom)
-            return [assert_msg, msg_swap]
+            swap_msg = MsgSwap(wallet.key.acc_address, offer_coin, ask_denom)
+            return [assert_msg, swap_msg]
         else:
             if ask_size == Dec(0):
                 return await self.swap(bid, bid_size)
             if minimum_receive == Dec(0):
-                spread = str(slippage)
+                spread = Dec(slippage)
             else:
-                spread = ((ask_size - minimum_receive) / ask_size).to_short_str()
+                spread = (ask_size - minimum_receive) / ask_size
             belief_price = bid_size / ask_size
-            msg = {
-                'swap': {
-                    'offer_asset': {
-                        'info': asset_info(bid, self.dex),
-                        'amount': bid_size.whole
-                    },
-                    'belief_price': belief_price.to_short_str(),  # optional
-                    'max_spread': spread,  # optional
-                    # 'to': wallet.key.acc_address
-                }}
+            msg = ABI.swap(self.dex, bid, bid_size, belief_price, spread)
             # Message for native tokens
             if bid in native_tokens:
-                offer_coin = Coin(get_denom(bid), bid_size.whole)
                 return [MsgExecuteContract(wallet.key.acc_address,
                                            self.contract,
                                            msg,
-                                           Coins([offer_coin]))]
+                                           Coins({get_denom(bid): bid_size.whole}))]
             # Message for CW20 tokens
             else:
-                execute_msg = {
-                    'send': {
-                        'contract': self.contract,
-                        'amount': bid_size.whole,
-                        'msg': base64str_encode(msg)
-                    }}
                 return [MsgExecuteContract(wallet.key.acc_address,
                                            get_contract(bid),
-                                           execute_msg)]
+                                           ABI.send(self.contract, bid_size, msg))]
 
     @convert_params
     async def swap(

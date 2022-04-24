@@ -5,7 +5,7 @@ import attr
 Hop = namedtuple('Hop', ['bid', 'ask', 'dex'])
 
 
-@attr.s
+@attr.s(slots=True)
 class Vertex:
     ask_size: Dec = attr.ib(cmp=False, converter=Dec)
     spread: Dec = attr.ib(converter=Dec)
@@ -14,7 +14,7 @@ class Vertex:
     swaps: List[Swap] = attr.ib(cmp=False, factory=list)
 
 
-@attr.s(repr=False)
+@attr.s(repr=False, slots=True)
 class Route:
     route: Tuple[str] = attr.ib()
     trade: Swap = attr.ib()
@@ -27,6 +27,8 @@ class Route:
 
 
 class Dex:
+    __slots__ = ('dex', 'router')
+
     def __init__(self, dex: str):
         self.dex = find_dex(dex)
         if self.dex in router:
@@ -186,40 +188,25 @@ class Dex:
             operations = []
             for swap in swaps:
                 if swap.dex == 'native_swap':
-                    operation = {'native_swap': {
-                        'offer_denom': get_denom(swap.bid),
-                        'ask_denom': get_denom(swap.ask)
-                    }}
+                    operation = ABI.native_swap(swap.bid, swap.ask)
                 else:
-                    operation = {swap.dex: {
-                        'offer_asset_info': asset_info(swap.bid, swap.dex),
-                        'ask_asset_info': asset_info(swap.ask, swap.dex)
-                    }}
+                    operation = ABI.dex_swap(swap.dex, swap.bid, swap.ask)
                 operations.append(operation)
-            msg = {
-                'execute_swap_operations': {
-                    'offer_amount': bid_size.whole,
-                    'minimum_receive': minimum_receive.whole,
-                    'max_spread': f'{max_spread}',
-                    'operations': operations
-                }}
+            msg = ABI.execute_swap_operations(bid_size,
+                                              minimum_receive,
+                                              f'{max_spread}',
+                                              operations)
             # Message for native tokens
             if bid in native_tokens:
-                coins = Coins({get_denom(bid): bid_size.whole})
                 return [MsgExecuteContract(wallet.key.acc_address,
                                            self.router,
-                                           msg, coins)]
+                                           msg,
+                                           Coins({get_denom(bid): bid_size.whole}))]
             # Message for CW20 tokens
             else:
-                execute_msg = {
-                    'send': {
-                        'contract': self.router,
-                        'amount': bid_size.whole,
-                        'msg': base64str_encode(msg)
-                    }}
                 return [MsgExecuteContract(wallet.key.acc_address,
                                            get_contract(bid),
-                                           execute_msg)]
+                                           ABI.send(self.router, bid_size, msg))]
         # Loop doesn't have a router.
         else:
             msgs = []

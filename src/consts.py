@@ -29,9 +29,11 @@ if testnet:
                    'kuji': {'contract': 'terra1azu2frwn9a4l6gl5r39d0cuccs4h7xlu9gkmtd',
                             'decimals': 6, 'dex': ('astro_swap',)},
                    'prism': {'contract': 'terra1cwle4remlf03mucutzhxfayvmdqsulx8xaahvy',
-                            'decimals': 6, 'dex': ('prism_swap',)},
+                             'decimals': 6, 'dex': ('prism_swap',)},
                    'neb': {'contract': 'terra1aj5yepjnmhdvh0xz3dfqeh30wday6tapvaze47',
-                            'decimals': 6, 'dex': ('astro_swap',)},
+                           'decimals': 6, 'dex': ('astro_swap',)},
+                   'batom': {'contract': 'terra1pw8kuxf3d7xnlsrqr39p29emwvufyr0yyjk3fg',
+                             'decimals': 6, 'dex': ('astro_swap',)},
                    }
 else:
     tokens_info = {'ust': {'denom': 'uusd', 'decimals': 6,
@@ -63,11 +65,17 @@ else:
                    'kuji': {'contract': 'terra1xfsdgcemqwxp4hhnyk4rle6wr22sseq7j07dnn',
                             'decimals': 6, 'dex': ('terra_swap', 'loop')},
                    'prism': {'contract': 'terra1dh9478k2qvqhqeajhn75a2a7dsnf74y5ukregw',
-                            'decimals': 6, 'dex': ('prism_swap',)},
+                             'decimals': 6, 'dex': ('prism_swap',)},
+                   'batom': {'contract': 'terra18zqcnl83z98tf6lly37gghm7238k7lh79u4z9a',
+                             'decimals': 6, 'dex': ()},
+                   'atom': {'denom': 'ibc/18ABA66B791918D51D33415DA173632735D830E2E77E63C91C11D3008CFD5262',
+                            'decimals': 6, 'dex': ()},
                    }
 
 
 class Pair:
+    __slots__ = 'pair'
+
     def __init__(self, token1: str, token2: str):
         self.pair = tuple(sorted([token1.lower(), token2.lower()]))
 
@@ -102,6 +110,16 @@ if testnet:
                'prism_swap': 'terra1g6x8r77h7sywyxc8zgfdyh39y770nvdm0vnl0r'}
 
     assert_limit_order = 'terra1z3sf42ywpuhxdh78rr5vyqxpaxa0dx657x5trs'
+
+    anchor = {
+        'market': 'terra15dwd5mj8v59wpj0wvt233mf5efdff808c5tkal',
+        'oracle': 'terra1p4gg3p2ue6qy2qfuxtrmgv2ec3f4jmgqtazum8',
+        'overseer': 'terra1qljxd0y3j3gk97025qvl3lgq8ygup4gsksvaxv',
+        'custody': {
+            'bluna': 'terra1ltnkx0mv7lf2rca9f8w740ashu93ujughy4s7p',
+            'batom': 'terra1e0s58n8grearn5nj7dz8tjrmq5hpqkeatxuhc3'
+        }
+    }
 
     # https://finder.extraterrestrial.money/testnet/projects/terraswap
     # https://finder.extraterrestrial.money/testnet/projects/terraswap
@@ -170,6 +188,10 @@ if testnet:
             'prism_swap': {'contract': 'terra1dhgw7ra0hajtn3smy4uvkyr7e6utewlw7afnly',
                            'fee': 0.003, 'tx_fee': 0, 'stable': False},
         },
+        Pair('batom', 'ust'): {
+            'astro_swap': {'contract': 'terra1xu2r64k7ffwqv5pzq6fxupglg5tthwr68t9lwc',
+                           'fee': 0.003, 'tx_fee': 0, 'stable': False},
+        },
     }
 else:
     multicall = 'terra1y60jx2jqh5qpmcnvgz3n0zg2p6ky4mr6ax2qa5'
@@ -188,6 +210,16 @@ else:
                'loop': 'terra16hdjuvghcumu6prg22cdjl96ptuay6r0hc6yns'}
 
     assert_limit_order = 'terra1vs9jr7pxuqwct3j29lez3pfetuu8xmq7tk3lzk'
+
+    anchor = {
+        'market': 'terra1sepfj7s0aeg5967uxnfk4thzlerrsktkpelm5s',
+        'oracle': 'terra1cgg6yef7qcdm070qftghfulaxmllgmvk77nc7t',
+        'overseer': 'terra1tmnqgvg567ypvsvk6rwsga3srp7e3lg6u0elp8',
+        'custody': {
+            'bluna': 'terra1ptjp2vfjrwh0j0faj9r6katm640kgjxnwwq9kn',
+            'batom': 'terra1zdxlrtyu74gf6pvjkg9t22hentflmfcs86llva'
+        }
+    }
 
     # https://finder.extraterrestrial.money/mainnet/projects/terraswap
     # https://finder.extraterrestrial.money/mainnet/projects/astroport

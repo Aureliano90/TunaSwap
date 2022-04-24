@@ -7,6 +7,8 @@ filled_db = getDb('filled.json')
 
 
 class LimitOrder(Swap):
+    __slots__ = ('aggr', '_id', 'price', 'status', 'triggered', 'tx')
+
     def __init__(
             self,
             dex: str,
@@ -84,6 +86,8 @@ class LimitOrder(Swap):
 
 
 class StopLoss(LimitOrder):
+    __slots__ = ()
+
     def __repr__(self):
         s = f"stop order {self.id}: {self.float_bid()} {self.bid} -> {self.float_ask()} {self.ask} on {self.dex}\n" \
             f"Trigger price {self.price.to_short_str()} {self.ask} per {self.bid}"
@@ -110,6 +114,8 @@ class StopLoss(LimitOrder):
 
 
 class ConditionOrder:
+    __slots__ = ('condition', 'order')
+
     def __init__(
             self,
             condition: Dict[str, bool],
@@ -184,7 +190,7 @@ class OrderBook:
                 order.tx = res
                 for coin in calculate_profit(res):
                     if order.ask == (token := from_denom(coin.denom)):
-                        order.ask_size = to_Dec(int(coin.amount), token)
+                        order.ask_size = Dec(coin.amount * pow(10, tokens_info[token.lower()]['decimals']))
                 print(order)
                 save_tx(res)
                 data = order.to_data()
@@ -201,12 +207,13 @@ class OrderBook:
     def parse_order(self, *args):
         kwargs: Dict[str, str | float] = dict(dex=self.dex.dex)
         for arg in args[1:]:
-            key, value = arg.split('=')
             try:
-                value = float(value)
+                key, value = arg.split('=')
+                key = key.lower()
+                kwargs[key] = value
+                kwargs[key] = float(value)
             except ValueError:
                 pass
-            kwargs[key] = value
         try:
             if 'condition' in kwargs:
                 condition = {}
@@ -221,17 +228,30 @@ class OrderBook:
             else:
                 return
             if condition:
-                print(condition, order)
                 order = ConditionOrder(condition, order)
             return order
         except Exception as exc:
-            print(exc)
+            print(f"Exception in {type(self).__name__}.parse_order\n{exc}")
+
+    @staticmethod
+    def parse_query(*args) -> Dict:
+        kwargs = {}
+        for arg in args:
+            try:
+                key, value = arg.split('=')
+                key = key.lower()
+                kwargs[key] = value
+                kwargs[key] = float(value)
+            except ValueError:
+                pass
+        return kwargs
 
     async def broker(self):
         print("""
-1   Place order
-2   Cancel order
-3   Pending orders
+1   Query price
+2   Place order
+3   Cancel order
+4   Pending orders
 q   Quit""")
         while True:
             command = await asyncio.ensure_future(loop.run_in_executor(None, input))
@@ -239,22 +259,34 @@ q   Quit""")
             match command:
                 case ['1', *args]:
                     if len(args):
+                        kwargs = self.parse_query(*args)
+                    else:
+                        print('Query price. Example: bid=luna bid_size=1 ask=ust')
+                        command = await asyncio.ensure_future(loop.run_in_executor(None, input))
+                        args = command.split()
+                        kwargs = self.parse_query(*args)
+                    try:
+                        print(await self.dex.dijkstra_routing(**kwargs))
+                    except TypeError:
+                        pass
+                case ['2', *args]:
+                    if len(args):
                         order = self.parse_order(*args)
                     else:
-                        print('Accepting order. Example:\nlimit bid=luna bid_size=1 ask=ust price=1000')
+                        print('Accepting order. Example: limit bid=luna bid_size=1 ask=ust price=1000')
                         command = await asyncio.ensure_future(loop.run_in_executor(None, input))
                         args = command.split()
                         order = self.parse_order(*args)
                     if order:
                         self.submit(order)
-                case ['2']:
+                case ['3']:
                     print(f"Open orders: {' '.join(self.open.keys())}")
                     if self.open:
                         order_id = await asyncio.ensure_future(loop.run_in_executor(None, input))
                         self.cancel(order_id)
-                case ['2', order_id]:
+                case ['3', order_id]:
                     self.cancel(order_id)
-                case ['3']:
+                case ['4']:
                     for order in self.open.values():
                         print(order)
                 case ['q']:

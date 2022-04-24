@@ -18,6 +18,7 @@ responsibilities for the use of the code, nor is warranty granted.
 * Find the best route with the least spread for a swap
 * Create, sign and broadcast transactions
 * Limit order and stop loss order
+* Manage Anchor LTV
 
 ## Usage Examples
 
@@ -60,8 +61,16 @@ On the other hand, Terraswap gives
 ```
 
 ```
-Accepting order. Example:
-limit bid=luna bid_size=1 ask=ust price=1000
+Open stop order 1: 1000.0 ust -> 1.0 luna on astro_swap
+Trigger price 0.001 luna per ust
+Open limit order 2: 1.0 luna -> 1000.0 ust on astro_swap
+Limit price 1000 ust per luna
+
+1   Query price
+2   Place order
+3   Cancel order
+4   Pending orders
+q   Quit
 ```
 
 Create, sign and broadcast transaction

@@ -21,15 +21,16 @@ class TxResult(BlockTxBroadcastResult):
 
 def save_tx(tx: TxResult | TxInfo):
     data = TxResult.to_data(tx)
-    if 'code' not in data:
-        data['code'], data['codespace'] = 0, ''
-    if 'data' not in data:
-        data['data'] = None
-    if 'info' not in data:
-        data['info'] = None
-    if 'tx' in data:
-        data.pop('tx')
-    txs_db.add(data)
+    if data:
+        if 'code' not in data:
+            data['code'], data['codespace'] = 0, ''
+        if 'data' not in data:
+            data['data'] = None
+        if 'info' not in data:
+            data['info'] = None
+        if 'tx' in data:
+            data.pop('tx')
+        txs_db.add(data)
 
 
 def retrieve_tx(txhash: str) -> TxResult | None:
