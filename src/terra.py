@@ -58,7 +58,7 @@ except OSError:
 
 loop = asyncio.get_event_loop_policy().get_event_loop()
 mk = MnemonicKey(base64str_decode(seed))
-wallet = loop.run_until_complete(AsyncWallet(terra, mk))
+wallet: AsyncWallet = loop.run_until_complete(AsyncWallet(terra, mk))
 
 
 def from_Dec(

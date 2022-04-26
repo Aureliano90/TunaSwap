@@ -7,7 +7,7 @@ from terra_sdk.core.fee import Fee
 from terra_sdk.core.msg import Msg
 from terra_sdk.exceptions import LCDResponseError
 from terra_sdk.key.key import Key
-from aiohttp import ClientError
+from aiohttp import ClientError, ClientOSError
 import asyncio
 
 
@@ -54,7 +54,7 @@ class BlockChain:
         """
         try:
             return int((await self.lcd.tendermint.block_info())['block']['header']['height'])
-        except LCDResponseError or ClientError:
+        except LCDResponseError | ClientError | ClientOSError:
             return 0
 
     async def set_new_block(self):
@@ -107,7 +107,7 @@ class AsyncWallet(_AsyncWallet):
     async def account_number_and_sequence(self) -> Dict:
         try:
             res = await super(AsyncWallet, self).account_number_and_sequence()
-            self._account_number, self._sequence = res['account_number'], res['sequence']
+            self.account_number, self.sequence = res['account_number'], res['sequence']
             return res
         except LCDResponseError as exc:
             if 'key not found' in exc.message:
@@ -171,9 +171,12 @@ class AsyncWallet(_AsyncWallet):
             self.sequence += 1
             result: BlockTxBroadcastResult = await self.lcd.tx.broadcast(tx)
             if hasattr(result, 'code') and result.code:
-                print(f"Transaction failed.\nCode: {result.code} Codespace: {result.codespace}")
+                print(f"Transaction failed. Code: {result.code} Codespace: {result.codespace}")
                 print(f"Raw log: {result.raw_log}")
-                if result.code == 11:
+                # account sequence mismatch
+                if result.code == 32:
+                    self.sequence -= 1
+                if result.code in (11, 32):
                     return await self.create_and_broadcast(tx.body.messages)
                 return None
             else:
@@ -201,7 +204,7 @@ class AsyncWallet(_AsyncWallet):
             try:
                 result: TxInfo = await self.lcd.tx.tx_info(tx_hash)
                 if hasattr(result, 'code') and result.code:
-                    print(f"Transaction failed.\nCode: {result.code} Codespace: {result.codespace}")
+                    print(f"Transaction failed. Code: {result.code} Codespace: {result.codespace}")
                     print(f"Raw log: {result.rawlog}")
                     return None
                 else:

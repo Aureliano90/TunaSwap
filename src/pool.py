@@ -1,4 +1,5 @@
 from math import sqrt
+from functools import singledispatch
 from src.terra import *
 import attr
 
@@ -44,23 +45,23 @@ class Pool:
                  'token1', 'token2', 'tx_fee')
 
     def __init__(self, *args):
-        # Initialize with a Pair
-        if isinstance(args[0], Pair):
-            self.pair = args[0]
-            dex = args[-1]
-        # Initialize with a Swap
-        elif isinstance(args[0], Swap):
-            self.pair = Pair(args[0].bid, args[0].ask)
-            dex = args[0].dex
-        # Initialize with strings
-        else:
-            self.pair = Pair(args[0], args[1])
-            dex = args[-1]
-        if isinstance(dex, str):
-            self.dex = find_dex(dex)
-            dex = self.dex if self.dex else dex.lower()
-        else:
-            dex = ''
+        @singledispatch
+        def init(*args):
+            raise TypeError(*args)
+
+        @init.register(str)
+        def _(token1: str, token2: str, dex=''):
+            return Pair(token1, token2), find_dex(dex)
+
+        @init.register(Pair)
+        def _(pair, dex=''):
+            return pair, find_dex(dex)
+
+        @init.register(Swap)
+        def _(swap):
+            return Pair(swap.bid, swap.ask), swap.dex
+
+        self.pair, self.dex = init(*args)
         self.token1, self.token2 = self.pair.pair
         assert self.token1 != self.token2
         assert self.token1 in tokens_info, f"No token info {self.token1}"
@@ -68,31 +69,17 @@ class Pool:
         self.amp = self.amount1 = self.amount2 = Dec(0)
         self.last_query = 0
         # Terra Market module swap
-        if dex == 'native_swap':
-            self.dex = dex
+        if self.dex == 'native_swap':
             self.luna_ust = Dec(0)
             self.stable = False
         else:
             try:
-                self.dex = dex
-                self.contract = AccAddress(pools_info[self.pair][dex]['contract'])
-                self.fee = pools_info[self.pair][dex]['fee']
-                self.tx_fee = pools_info[self.pair][dex]['tx_fee']
-                self.stable = pools_info[self.pair][dex]['stable']
+                self.contract = AccAddress(pools_info[self.pair][self.dex]['contract'])
+                self.fee = pools_info[self.pair][self.dex]['fee']
+                self.tx_fee = pools_info[self.pair][self.dex]['tx_fee']
+                self.stable = pools_info[self.pair][self.dex]['stable']
             except KeyError:
-                if self.pair in pools_info:
-                    # dex isn't specified.
-                    for dex, info in pools_info[self.pair].items():
-                        print(f'Using {dex}')
-                        self.dex = dex
-                        self.contract = AccAddress(info['contract'])
-                        self.fee = info['fee']
-                        self.tx_fee = info['tx_fee']
-                        self.stable = info['stable']
-                        break
-                else:
-                    # Trading pair isn't available locally.
-                    self.pair_info(dex)
+                self.pair_info(self.dex)
 
     def __repr__(self):
         return f'Pool{self.pair.pair} on {self.dex}'
@@ -107,35 +94,46 @@ class Pool:
         """Find pair info from smart contract
         """
         assert dex != 'native_swap'
-        print(f"Can't find {self.pair} info locally. Querying blockchain.")
-        from terra_sdk.client.lcd import LCDClient
-        c = LCDClient(chain_id=chain_id, url=light_clinet_address)
-        if dex:
-            try:
-                msg = ABI.pair(self.pair, dex)
-                asset_infos = c.wasm.contract_query(factory[dex], msg)
-            except LCDResponseError as exc:
-                print(f"Exception in {type(self).__name__}.pair_info\n{exc}")
-                raise
+        if self.pair in pools_info:
+            # dex isn't specified.
+            for dex, info in pools_info[self.pair].items():
+                print(f'Using {dex}')
+                self.dex = dex
+                self.contract = AccAddress(info['contract'])
+                self.fee = info['fee']
+                self.tx_fee = info['tx_fee']
+                self.stable = info['stable']
+                return
         else:
-            # Query all factory contracts
-            for dex in factory:
+            print(f"Can't find {self.pair} info locally. Querying blockchain.")
+            from terra_sdk.client.lcd import LCDClient
+            c = LCDClient(chain_id=chain_id, url=light_clinet_address)
+
+            if dex:
                 try:
                     msg = ABI.pair(self.pair, dex)
                     asset_infos = c.wasm.contract_query(factory[dex], msg)
-                    break
                 except LCDResponseError as exc:
                     print(f"Exception in {type(self).__name__}.pair_info\n{exc}")
+                    raise
             else:
-                print('Pair is not found on any DEX.')
-                raise ValueError
-        self.dex = dex
-        self.contract = AccAddress(asset_infos['contract_addr'])
-        self.tx_fee = 0
-        self.fee = 0.003
-        self.stable = False
-        if 'pair_type' in asset_infos:
-            if 'stable' in asset_infos['pair_type']:
+                # Query all factory contracts
+                for dex in factory:
+                    try:
+                        msg = ABI.pair(self.pair, dex)
+                        asset_infos = c.wasm.contract_query(factory[dex], msg)
+                        break
+                    except LCDResponseError as exc:
+                        print(f"Exception in {type(self).__name__}.pair_info\n{exc}")
+                else:
+                    print('Pair is not found on any DEX.')
+                    raise ValueError
+            self.dex = dex
+            self.contract = AccAddress(asset_infos['contract_addr'])
+            self.tx_fee = 0
+            self.fee = 0.003
+            self.stable = False
+            if 'pair_type' in asset_infos and 'stable' in asset_infos['pair_type']:
                 self.fee = 0.0005
                 self.stable = True
 

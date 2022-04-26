@@ -202,7 +202,7 @@ class OrderBook:
                         _order.notify(order.id)
         except LCDResponseError as exc:
             print(f"Exception in {type(self).__name__}.fill\n{exc}")
-            raise
+            self.open[order.id] = order
 
     def parse_order(self, *args):
         kwargs: Dict[str, str | float] = dict(dex=self.dex.dex)

@@ -1,3 +1,4 @@
+from datetime import datetime
 from src.transaction import *
 import attr
 
@@ -146,4 +147,4 @@ class Anchor:
                 continue
             if res:
                 save_tx(res)
-                print(f"New LTV {(self.borrowed_value / self.borrow_limit).to_short_str()}")
+                print(f"{datetime.now()} New LTV {(self.borrowed_value / self.borrow_limit).to_short_str()}")
