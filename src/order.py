@@ -156,9 +156,10 @@ class OrderBook:
     def submit(self, order: LimitOrder):
         order.dex = self.dex.dex
         if not order.id or order.id in self.open:
-            order.id = len(self.open) + 1
-            while order.id in self.open:
-                order.id = int(order.id) + 1
+            for i in range(1, len(self.open) + 2):
+                if str(i) not in self.open:
+                    order.id = str(i)
+                    break
         self.open[order.id] = order
         print(order)
         self.pools.update(self.dex.pools_from_routes(self.dex.dfs(order.bid, order.ask)))

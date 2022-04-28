@@ -445,15 +445,19 @@ class ABI(Dict):
 async def multicall_query(queries: List[ABI.multicall_query]) -> List[Dict]:
     """Aggregate multiple queries using Multicall contract
     """
-    nmsgs = 0
-    tasks = []
-    while nmsgs < len(queries):
-        aggregate = ABI.aggregate(queries[nmsgs:nmsgs + 20])
-        tasks.append(terra.wasm.contract_query(multicall, aggregate))
-        nmsgs += 20
-    msgs = []
-    for response in await asyncio.gather(*tasks):
-        msgs.extend(response['return_data'])
+    try:
+        nmsgs = 0
+        tasks = []
+        while nmsgs < len(queries):
+            aggregate = ABI.aggregate(queries[nmsgs:nmsgs + 20])
+            tasks.append(terra.wasm.contract_query(multicall, aggregate))
+            nmsgs += 20
+        msgs = []
+        for response in await asyncio.gather(*tasks):
+            msgs.extend(response['return_data'])
+    except LCDResponseError:
+        # Retry for network errors
+        return await multicall_query(queries)
     res = []
     for msg in msgs:
         assert msg['success']

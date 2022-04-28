@@ -7,7 +7,7 @@ from terra_sdk.core.fee import Fee
 from terra_sdk.core.msg import Msg
 from terra_sdk.exceptions import LCDResponseError
 from terra_sdk.key.key import Key
-from aiohttp import ClientError, ClientOSError
+from aiohttp import ClientError
 import asyncio
 
 
@@ -54,7 +54,7 @@ class BlockChain:
         """
         try:
             return int((await self.lcd.tendermint.block_info())['block']['header']['height'])
-        except LCDResponseError | ClientError | ClientOSError:
+        except LCDResponseError or ClientError:
             return 0
 
     async def set_new_block(self):

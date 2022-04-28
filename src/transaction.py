@@ -96,7 +96,7 @@ def filter_tx_log_by_order(
     return {}
 
 
-def calculate_profit(tx: TxResult | Dict) -> Coins:
+def calculate_profit(tx: BlockTxBroadcastResult | TxInfo | TxResult | Dict) -> Coins:
     if isinstance(tx, Dict):
         tx = TxResult.from_data(tx)
     try:
