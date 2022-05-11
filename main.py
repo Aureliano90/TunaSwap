@@ -19,9 +19,9 @@ async def main():
         # print(f'{wallet.account_number=}')
         # print(f'{wallet.sequence=}')
 
-        from_token = 'Luna'
-        to_token = 'bLuna'
-        pool = Pool(from_token, to_token, 'astro_swap')
+        from_token = 'ust'
+        to_token = 'Luna'
+        pool = Pool(from_token, to_token, 'native_swap')
         bid = to_Dec(10, from_token)
         # Simulate swap result on a specific pair
         trade = await pool.simulate(from_token, bid)
@@ -38,8 +38,8 @@ async def main():
         # to_token = 'bluna'
         bid = to_Dec(100, from_token)
         # Find the best route with the least spread for a swap
-        routing = await Dex('terra_swap').dijkstra_routing(from_token, bid, to_token)
-        print(routing)
+        # routing = await Dex('terra_swap').dijkstra_routing(from_token, bid, to_token)
+        # print(routing)
         # Wrap trading route to a message
         # msgs = await Dex('terra_swap').route_to_msg(routing)
         # Find and wrap
@@ -54,12 +54,12 @@ async def main():
         # await wallet.create_and_broadcast(msgs)
         # await bank.monitor()
 
-        book = OrderBook('astro_swap')
+        # book = OrderBook('astro_swap')
         # Start accepting orders
-        book.submit(StopLoss('', 'ust', 1000, 'luna', ask_size=1))
-        book.submit(LimitOrder('', 'luna', 1, 'ust', price=1000))
-        task = asyncio.create_task(book.start(broker=True))
-        await task
+        # book.submit(StopLoss('', 'ust', 1000, 'luna', ask_size=1))
+        # book.submit(LimitOrder('', 'luna', 1, 'ust', price=1000))
+        # task = asyncio.create_task(book.start(broker=True))
+        # await task
 
         # Check token balance
         balance = await token_balance(from_token)
@@ -81,7 +81,7 @@ async def main():
         fee = await wallet.estimate_fee(msgs, memo='')
         if fee:
             print(f'{fee.amount=}')
-        exit()
+        # exit()
 
         # Create, sign and broadcast transaction
         tx = await wallet.create_and_sign_tx(msgs, fee=fee, memo='')

@@ -371,8 +371,7 @@ class Pool:
                     return await self.swap(bid, bid_size)
             assert_msg = MsgExecuteContract(wallet.key.acc_address,
                                             assert_limit_order,
-                                            ABI.assert_limit_order(ask_denom, offer_coin, minimum_receive),
-                                            Coins([offer_coin]))
+                                            ABI.assert_limit_order(ask_denom, offer_coin, minimum_receive))
             swap_msg = MsgSwap(wallet.key.acc_address, offer_coin, ask_denom)
             return [assert_msg, swap_msg]
         else:
