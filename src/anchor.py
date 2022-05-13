@@ -28,7 +28,7 @@ class Anchor:
     async def update_prices(self):
         res = await terra.wasm.contract_query(anchor['oracle'], ABI.self('prices'))
         for feed in res['prices']:
-            asset = from_contract(feed['asset'])
+            asset = token_from_contract(feed['asset'])
             if asset:
                 self.prices[asset] = Dec(feed['price'])
 
@@ -86,7 +86,7 @@ class Anchor:
         res = await terra.wasm.contract_query(anchor['overseer'], ABI.collaterals(wallet.key.acc_address))
         self.collaterals = Coins()
         for collateral in res['collaterals']:
-            self.collaterals = self.collaterals + Coin(from_contract(collateral[0]), Dec(collateral[1]))
+            self.collaterals = self.collaterals + Coin(token_from_contract(collateral[0]), Dec(collateral[1]))
         print(f"Collaterals: {self.collaterals}")
 
     async def deposit_collateral(
@@ -123,25 +123,29 @@ class Anchor:
     async def monitor(self):
         async for _ in wallet.blockchain:
             await self.update_loan()
-            if self.borrowed_value < self.borrow_limit * 0.85:
-                borrow_amount = self.borrow_limit * 0.9 - self.borrowed_value
+            if self.borrowed_value < self.borrow_limit * 0.8:
+                borrow_amount = self.borrow_limit * 0.85 - self.borrowed_value
                 print(f"Current LTV {(self.borrowed_value / self.borrow_limit).to_short_str()} "
                       f"Borrowing {from_Dec(borrow_amount, 'ust')} UST")
                 borrow_msg = await self.borrow_stable(borrow_amount)
                 deposit_msg = await self.deposit_stable(borrow_amount)
                 msgs = borrow_msg + deposit_msg
                 res = await wallet.create_and_broadcast(msgs, gas='750000')
-            elif self.borrowed_value > self.borrow_limit * 0.95:
-                repay_amount = self.borrowed_value - self.borrow_limit * 0.9
+            elif self.borrowed_value > self.borrow_limit * 0.9:
+                repay_amount = self.borrowed_value - self.borrow_limit * 0.85
                 print(f"Current LTV {(self.borrowed_value / self.borrow_limit).to_short_str()} "
                       f"Repaying {from_Dec(repay_amount, 'ust')} UST")
                 if self.deposit < to_Dec(1, 'aust'):
-                    continue
-                if repay_amount > self.deposit * self.exchange_rate:
-                    repay_amount = await self.deposit_balance() * self.exchange_rate
-                withdraw_msg = await self.redeem_stable(repay_amount)
-                repay_msg = await self.repay_stable(repay_amount)
-                msgs = withdraw_msg + repay_msg
+                    repay_amount = min(await token_balance('ust') - to_Dec(10, 'ust'), repay_amount)
+                    if repay_amount < to_Dec(10, 'ust'):
+                        continue
+                    msgs = await self.repay_stable(repay_amount)
+                else:
+                    if repay_amount > self.deposit * self.exchange_rate:
+                        repay_amount = await self.deposit_balance() * self.exchange_rate
+                    withdraw_msg = await self.redeem_stable(repay_amount)
+                    repay_msg = await self.repay_stable(repay_amount)
+                    msgs = withdraw_msg + repay_msg
                 res = await wallet.create_and_broadcast(msgs, gas='650000')
             else:
                 continue

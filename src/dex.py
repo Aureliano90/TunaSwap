@@ -185,6 +185,8 @@ class Dex:
                         minimum_receive = ask_size * (1 - slippage)
                     else:
                         return await self.swap_msg(bid, bid_size, ask)
+            if len(swaps) == 1:
+                return await Pool(trade).swap_to_msg(trade, minimum_receive)
             operations = []
             for swap in swaps:
                 if swap.dex == 'native_swap':
@@ -211,7 +213,7 @@ class Dex:
         else:
             msgs = []
             for swap in swaps:
-                msgs.extend(await Pool(swap).swap_to_msg(swap, swap.ask_size))
+                msgs.extend(await Pool(swap).swap_to_msg(swap, swap.ask_size * (1 - slippage)))
             return msgs
 
     @convert_params

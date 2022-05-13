@@ -45,7 +45,7 @@ Find the best route with the least spread for a swap
 Route(100.0 nluna -> 191475.553937 psi -> 7275.843784 ust -> 89.299495 luna -> 89.618139 bluna on terra_swap)
 ```
 
-On the other hand, Terraswap gives
+Meanwhile, Terraswap gives
 
 <p align="center">
   <img width="400" height="600" src="https://raw.githubusercontent.com/Aureliano90/TunaSwap/main/multi_hop_swap.jpg" alt='multi_hop_swap'>
@@ -125,9 +125,3 @@ Permissions of this license are conditioned on making available complete source 
 modifications, which include larger works using a licensed work, under the same license. Copyright and license notices
 must be preserved. Contributors provide an express grant of patent rights. When a modified version is used to provide a
 service over a network, the complete source code of the modified version must be made available.
-
-## Support
-
-Improvements may be suggested. Pull requests are welcome. Donation is appreciated.
-
-Terra address: terra1dgl5w2zqeq9s6puuq9tflylj9zfpf5zfngsj30

@@ -42,11 +42,12 @@ class async_property(property):
 
 
 class BlockChain:
-    __slots__ = ('current_height', 'lcd', 'new_block_evt')
+    __slots__ = ('current_height', 'lcd', 'new_block_evt', 'interval')
 
     def __init__(self, lcd: AsyncLCDClient):
         self.lcd = lcd
         self.current_height = 0
+        self.interval = 0.04
         self.new_block_evt = asyncio.Event()
 
     async def block_height(self):
@@ -54,7 +55,7 @@ class BlockChain:
         """
         try:
             return int((await self.lcd.tendermint.block_info())['block']['header']['height'])
-        except LCDResponseError or ClientError:
+        except (LCDResponseError, ClientError, asyncio.TimeoutError):
             return 0
 
     async def set_new_block(self):
@@ -77,10 +78,14 @@ class BlockChain:
             try:
                 while not self.new_block_evt.is_set():
                     asyncio.create_task(self.set_new_block())
-                    await asyncio.sleep(0.05)
+                    await asyncio.sleep(self.interval)
                 block_time = loop.time()
                 yield self.current_height
-            except LCDResponseError:
+            except LCDResponseError as exc:
+                print('__aiter__', exc)
+                if exc.response.status == 429:
+                    await asyncio.sleep(2)
+                    self.interval *= 1.2
                 pass
 
 
@@ -169,7 +174,7 @@ class AsyncWallet(_AsyncWallet):
         """
         try:
             self.sequence += 1
-            result: BlockTxBroadcastResult = await self.lcd.tx.broadcast(tx)
+            result = await self.lcd.tx.broadcast(tx)
             if hasattr(result, 'code') and result.code:
                 print(f"Transaction failed. Code: {result.code} Codespace: {result.codespace}")
                 print(f"Raw log: {result.raw_log}")
@@ -178,12 +183,12 @@ class AsyncWallet(_AsyncWallet):
                     self.sequence -= 1
                 if result.code in (11, 32):
                     return await self.create_and_broadcast(tx.body.messages)
-                return None
-            else:
-                return result
+            return result
         except LCDResponseError as exc:
             print(f"Exception in {type(self).__name__}.broadcast\n{exc}")
-            return await self.tx_info(await self.lcd.tx.hash(tx))
+            result = await self.tx_info(await self.lcd.tx.hash(tx))
+            await self.account_number_and_sequence()
+            return result
 
     async def create_and_broadcast(
             self,
@@ -206,10 +211,7 @@ class AsyncWallet(_AsyncWallet):
                 if hasattr(result, 'code') and result.code:
                     print(f"Transaction failed. Code: {result.code} Codespace: {result.codespace}")
                     print(f"Raw log: {result.rawlog}")
-                    return None
-                else:
-                    self.sequence -= 1
-                    return result
+                return result
             except LCDResponseError as exc:
                 code = int(exc.response.status)
 

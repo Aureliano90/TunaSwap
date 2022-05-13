@@ -145,7 +145,7 @@ class ConditionOrder:
             return await self.order.match(pools)
 
 
-@attr.s
+@attr.s(slots=True)
 class OrderBook:
     dex: Dex | str = attr.ib(converter=Dex)
     open: Dict[str, LimitOrder] = attr.ib(factory=dict)

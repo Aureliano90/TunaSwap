@@ -3,7 +3,7 @@ from functools import wraps
 from heapq import heappop, heappush
 from terra_sdk.core import AccAddress, Coin, Coins, Dec, TxLog
 from terra_sdk.core.market.msgs import MsgSwap
-from terra_sdk.core.wasm.msgs import MsgExecuteContract
+from terra_sdk.core.wasm.msgs import MsgExecuteContract, parse_msg
 from terra_sdk.key.mnemonic import MnemonicKey
 from src.consts import *
 from src.wallet import *
@@ -24,6 +24,10 @@ terra = AsyncLCDClient(chain_id=chain_id,
                        url=light_clinet_address,
                        gas_prices=Coins(uusd=gas_prices['uusd']),
                        gas_adjustment=1.2)
+fcd = AsyncLCDClient(chain_id=chain_id,
+                     url='https://fcd.terra.dev',
+                     gas_prices=Coins(uusd=gas_prices['uusd']),
+                     gas_adjustment=1.2)
 
 
 def base64str_decode(msg: str) -> Any:
@@ -156,12 +160,24 @@ def get_contract(token: str) -> AccAddress | str:
         return ''
 
 
-def from_contract(contract: str) -> str:
+def tokens_from_contracts() -> Dict[str, str]:
+    """Mapping between contract and token symbol
+    """
+    tokens = dict()
+    for token, info in tokens_info.items():
+        if 'contract' in info:
+            tokens[info['contract']] = token
+    return tokens
+
+
+token_contract_map = tokens_from_contracts()
+
+
+def token_from_contract(contract: str) -> str | None:
     """Get token symbol from `contract` address
     """
-    for token, info in tokens_info.items():
-        if 'contract' in info and info['contract'] == contract:
-            return token
+    if contract in token_contract_map:
+        return token_contract_map[contract]
 
 
 async def token_balance(token: str) -> Dec:
@@ -188,7 +204,8 @@ async def coins_balance() -> Coins | None:
         return coins
     except LCDResponseError as exc:
         print(f"Exception in {coins_balance.__name__}\n{exc}")
-        return None
+        await asyncio.sleep(2)
+        return await coins_balance()
 
 
 async def pair_query(
@@ -442,22 +459,35 @@ class ABI(Dict):
         })
 
 
+multicall_limit = 20
+multicall_retry = 10
+
+
 async def multicall_query(queries: List[ABI.multicall_query]) -> List[Dict]:
     """Aggregate multiple queries using Multicall contract
     """
+    global multicall_limit
     try:
         nmsgs = 0
         tasks = []
         while nmsgs < len(queries):
-            aggregate = ABI.aggregate(queries[nmsgs:nmsgs + 20])
+            aggregate = ABI.aggregate(queries[nmsgs:nmsgs + multicall_limit])
             tasks.append(terra.wasm.contract_query(multicall, aggregate))
-            nmsgs += 20
+            nmsgs += multicall_limit
         msgs = []
         for response in await asyncio.gather(*tasks):
             msgs.extend(response['return_data'])
-    except LCDResponseError:
-        # Retry for network errors
-        return await multicall_query(queries)
+    except LCDResponseError as exc:
+        # print('multicall_query', exc)
+        global multicall_retry
+        if 'out of gas' in exc.message:
+            multicall_limit -= 1
+        multicall_retry -= 1
+        if multicall_retry:
+            # Retry for network errors
+            return await multicall_query(queries)
+        else:
+            raise exc
     res = []
     for msg in msgs:
         assert msg['success']

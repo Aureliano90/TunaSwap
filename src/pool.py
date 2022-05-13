@@ -10,6 +10,14 @@ def quadratic_root(a: float, b: float, c: float):
     return (-b + s) * a, (-b - s) * a
 
 
+def flatten(dict):
+    for key, value in dict.items():
+        if isinstance(value, Dict):
+            yield from flatten(value)
+        else:
+            yield value
+
+
 @attr.s(repr=False, slots=True)
 class Swap:
     """Dataclass of a swap
@@ -41,8 +49,8 @@ class Swap:
 class Pool:
     """Class representing an AMM liquidity pool
     """
-    __slots__ = ('amp', 'amount1', 'amount2', 'contract', 'dex', 'fee', 'last_query', 'luna_ust', 'pair', 'stable',
-                 'token1', 'token2', 'tx_fee')
+    __slots__ = ('amp', 'amount1', 'amount2', 'contract', 'dex', 'fee', 'last_query', 'pair', 'stable',
+                 'token1', 'token2', 'tx_fee', 'params', 'recovered')
 
     def __init__(self, *args):
         @singledispatch
@@ -70,8 +78,9 @@ class Pool:
         self.last_query = 0
         # Terra Market module swap
         if self.dex == 'native_swap':
-            self.luna_ust = Dec(0)
+            self.params = {'luna_ust': Dec(0)}
             self.stable = False
+            self.recovered = False
         else:
             try:
                 self.contract = AccAddress(pools_info[self.pair][self.dex]['contract'])
@@ -139,20 +148,14 @@ class Pool:
 
     @staticmethod
     def _token_amount(
-            response: Dict,
+            assets: Dict | List,
             token: str
-    ) -> Dec:
+    ) -> Dec | None:
         """Get token amount in pool
         """
-
-        def flatten(dict):
-            for key, value in dict.items():
-                if isinstance(value, Dict):
-                    yield from flatten(value)
-                else:
-                    yield value
-
-        for asset in response['assets']:
+        if isinstance(assets, Dict):
+            assets = [assets]
+        for asset in assets:
             if get_denom(token) in flatten(asset['info']):
                 return Dec(asset['amount'])
             if get_contract(token) in flatten(asset['info']):
@@ -162,25 +165,76 @@ class Pool:
         """Query liquidity
         """
         if self.dex == 'native_swap':
-            if (loop.time() - self.last_query) > 6:
-                delta, params, rates = await asyncio.gather(terra.market.terra_pool_delta(), terra.market.parameters(),
-                                                            terra.oracle.exchange_rates())
+            if (loop.time() - self.last_query) > 3:
+                try:
+                    delta, self.params, rates = await asyncio.gather(terra.market.terra_pool_delta(),
+                                                                terra.market.parameters(),
+                                                                terra.oracle.exchange_rates())
+                except LCDResponseError:
+                    return await self.query()
                 self.last_query = loop.time()
-                base_pool = params['base_pool']
-                self.fee = params['min_stability_spread']
-                luna_sdt = rates.get('usdr').amount
-                self.luna_ust = rates.get('uusd').amount
-                sdt_ust = self.luna_ust / luna_sdt
-                self.amount1 = base_pool * base_pool / (base_pool + delta) / luna_sdt
-                self.amount2 = (base_pool + delta) * sdt_ust
+                self.fee = self.params['min_stability_spread']
+                self.params['luna_sdt'] = rates.get('usdr').amount
+                self.params['luna_ust'] = rates.get('uusd').amount
+                self.params['sdt_ust'] = self.params['luna_ust'] / self.params['luna_sdt']
+                self.params['delta'] = delta
+                self.amount1 = self.params['base_pool'] * self.params['base_pool'] / (
+                        self.params['base_pool'] + self.params['delta']) / self.params['luna_sdt']
+                self.amount2 = (self.params['base_pool'] + self.params['delta']) * self.params['sdt_ust']
+                self.recovered = False
         else:
             if self.stable:
                 pool, config = await multicall_query(self.multicall_query_msg())
                 self.amp = Dec(base64str_decode(config['params'])['amp'])
             else:
                 pool = await terra.wasm.contract_query(self.contract, ABI.self('pool'))
-            self.amount1 = self._token_amount(pool, self.token1)
-            self.amount2 = self._token_amount(pool, self.token2)
+            self.amount1 = self._token_amount(pool['assets'], self.token1)
+            self.amount2 = self._token_amount(pool['assets'], self.token2)
+
+    async def simulate_msg(self, msg: Msg):
+        """Simulate mempool messages
+        """
+        bid_size = Dec(0)
+        if isinstance(msg, MsgExecuteContract):
+            # Native tokens
+            if msg.contract == self.contract:
+                coin = msg.coins.to_list()[0]
+                token = from_denom(coin.denom)
+                bid_size = Dec(coin.amount)
+            # CW20 tokens
+            else:
+                token = token_from_contract(msg.contract)
+                if token:
+                    if 'contract' in msg.execute_msg['send']:
+                        if self.contract == msg.execute_msg['send']['contract']:
+                            bid_size = Dec(msg.execute_msg['send']['amount'])
+        elif isinstance(msg, MsgSwap):
+            assert self.dex == 'native_swap'
+            if not self.recovered:
+                self.recovered = True
+                self.params['delta'] *= 1 - 1 / self.params['pool_recovery_period']
+                self.amount1 = self.params['base_pool'] * self.params['base_pool'] / (
+                        self.params['base_pool'] + self.params['delta']) / self.params['luna_sdt']
+                self.amount2 = (self.params['base_pool'] + self.params['delta']) * self.params['sdt_ust']
+            coin = msg.offer_coin
+            token = from_denom(coin.denom)
+            bid_size = Dec(coin.amount)
+            if token not in self.pair.pair or from_denom(msg.ask_denom) != self.pair.other(token):
+                return
+        else:
+            return
+
+        if bid_size != Dec(0):
+            swap = await self.simulate(token, bid_size)
+            if self.token1 == token:
+                self.amount1 += bid_size
+                self.amount2 -= swap.ask_size
+            elif self.token2 == token:
+                self.amount2 += bid_size
+                self.amount1 -= swap.ask_size
+            else:
+                raise ValueError
+
 
     def multicall_query_msg(self) -> List[ABI.multicall_query]:
         """Query message
@@ -198,8 +252,8 @@ class Pool:
         """
         for data in msgs:
             if 'assets' in data:
-                self.amount1 = self._token_amount(data, self.token1)
-                self.amount2 = self._token_amount(data, self.token2)
+                self.amount1 = self._token_amount(data['assets'], self.token1)
+                self.amount2 = self._token_amount(data['assets'], self.token2)
             elif 'params' in data:
                 self.amp = Dec(base64str_decode(data['params'])['amp'])
 
@@ -272,7 +326,7 @@ class Pool:
         """
         xi, yi = await self.xy(bid)
         if self.dex == 'native_swap':
-            return self.luna_ust if bid == 'luna' else self.luna_ust.__rtruediv__(1)
+            return self.params['luna_ust'] if bid == 'luna' else self.params['luna_ust'].__rtruediv__(1)
         else:
             if self.stable:
                 bid_size = Dec(10 ** 6)
