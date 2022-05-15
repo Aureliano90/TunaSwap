@@ -10,14 +10,6 @@ def quadratic_root(a: float, b: float, c: float):
     return (-b + s) * a, (-b - s) * a
 
 
-def flatten(dict):
-    for key, value in dict.items():
-        if isinstance(value, Dict):
-            yield from flatten(value)
-        else:
-            yield value
-
-
 @attr.s(repr=False, slots=True)
 class Swap:
     """Dataclass of a swap
@@ -168,8 +160,8 @@ class Pool:
             if (loop.time() - self.last_query) > 3:
                 try:
                     delta, self.params, rates = await asyncio.gather(terra.market.terra_pool_delta(),
-                                                                terra.market.parameters(),
-                                                                terra.oracle.exchange_rates())
+                                                                     terra.market.parameters(),
+                                                                     terra.oracle.exchange_rates())
                 except LCDResponseError:
                     return await self.query()
                 self.last_query = loop.time()
@@ -198,16 +190,18 @@ class Pool:
         if isinstance(msg, MsgExecuteContract):
             # Native tokens
             if msg.contract == self.contract:
-                coin = msg.coins.to_list()[0]
-                token = from_denom(coin.denom)
-                bid_size = Dec(coin.amount)
+                if 'swap' in msg.execute_msg:
+                    coin = msg.coins.to_list()[0]
+                    token = from_denom(coin.denom)
+                    bid_size = Dec(coin.amount)
             # CW20 tokens
             else:
                 token = token_from_contract(msg.contract)
-                if token:
+                if token is not None and 'send' in msg.execute_msg:
                     if 'contract' in msg.execute_msg['send']:
                         if self.contract == msg.execute_msg['send']['contract']:
-                            bid_size = Dec(msg.execute_msg['send']['amount'])
+                            if 'swap' in base64str_decode(msg.execute_msg['send']['msg']):
+                                bid_size = Dec(msg.execute_msg['send']['amount'])
         elif isinstance(msg, MsgSwap):
             assert self.dex == 'native_swap'
             if not self.recovered:
@@ -486,3 +480,19 @@ async def multi_pools_query(pools: Iterable[Pool]):
         else:
             pool.parse_multicall_res(res[i:i + 1])
             i += 1
+
+
+def pool_from_contract(contract: str) -> Pool:
+    for pair, dexes in pools_info.items():
+        for dex, info in dexes.items():
+            if info['contract'] == contract:
+                return Pool(pair, dex)
+
+
+def pools_from_contracts() -> Dict[str, Pool]:
+    pools = dict()
+    for pair, dexes in pools_info.items():
+        for dex, info in dexes.items():
+            if 'contract' in info:
+                pools[info['contract']] = Pool(pair, dex)
+    return pools

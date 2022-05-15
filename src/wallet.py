@@ -5,6 +5,7 @@ from terra_sdk.core import Tx, TxInfo
 from terra_sdk.core.broadcast import BlockTxBroadcastResult, AsyncTxBroadcastResult
 from terra_sdk.core.fee import Fee
 from terra_sdk.core.msg import Msg
+from terra_sdk.util.hash import hash_amino
 from terra_sdk.exceptions import LCDResponseError
 from terra_sdk.key.key import Key
 from aiohttp import ClientError
@@ -42,51 +43,72 @@ class async_property(property):
 
 
 class BlockChain:
-    __slots__ = ('current_height', 'lcd', 'new_block_evt', 'interval')
+    __slots__ = ('block', 'current_height', 'lcd', 'new_block_evt', 'interval', 'initial_block', 'loop', 'start_time')
 
     def __init__(self, lcd: AsyncLCDClient):
         self.lcd = lcd
+        self.block = {}
         self.current_height = 0
+        self.initial_block = 0
         self.interval = 0.04
+        self.loop = asyncio.get_event_loop()
+        self.start_time = self.loop.time()
         self.new_block_evt = asyncio.Event()
 
-    async def block_height(self):
-        """Self-explanatory
-        """
+    @property
+    def average_block_time(self):
+        if self.block_height - self.initial_block:
+            return (self.loop.time() - self.start_time) / (self.block_height - self.initial_block)
+        else:
+            return 6
+
+    async def block_info(self):
         try:
-            return int((await self.lcd.tendermint.block_info())['block']['header']['height'])
+            self.block = (await self.lcd.tendermint.block_info())['block']
         except (LCDResponseError, ClientError, asyncio.TimeoutError):
             return 0
 
+    @property
+    def block_height(self):
+        """Self-explanatory
+        """
+        return int(self.block['header']['height']) if self.block else 0
+
     async def set_new_block(self):
-        new_height = await self.block_height()
-        if new_height > self.current_height:
+        await self.block_info()
+        if self.block_height > self.current_height:
             if not self.new_block_evt.is_set():
                 self.new_block_evt.set()
-                self.current_height = new_height
+                self.current_height = self.block_height
 
     async def __aiter__(self):
         """AsyncGenerator iterating over blocks
         """
-        loop = asyncio.get_event_loop()
-        block_time = loop.time()
-        self.current_height = await self.block_height()
-        yield self.current_height
+        block_time = self.loop.time()
+        await self.set_new_block()
+        self.initial_block = self.block_height
+        yield self.block
         while True:
-            await asyncio.sleep(6 - loop.time() + block_time)
+            await asyncio.sleep(self.average_block_time - 0.2 - self.loop.time() + block_time)
             self.new_block_evt.clear()
             try:
                 while not self.new_block_evt.is_set():
                     asyncio.create_task(self.set_new_block())
                     await asyncio.sleep(self.interval)
-                block_time = loop.time()
-                yield self.current_height
+                block_time = self.loop.time()
+                yield self.block
             except LCDResponseError as exc:
                 print('__aiter__', exc)
                 if exc.response.status == 429:
                     await asyncio.sleep(2)
                     self.interval *= 1.2
                 pass
+
+    async def transactions(self) -> List[Tx]:
+        return [await self.lcd.tx.decode(encoded_tx) for encoded_tx in self.block['data']['txs']]
+
+    def hashes(self) -> List[str]:
+        return [hash_amino(encoded_tx) for encoded_tx in self.block['data']['txs']]
 
 
 class AsyncWallet(_AsyncWallet):

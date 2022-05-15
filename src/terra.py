@@ -3,7 +3,7 @@ from functools import wraps
 from heapq import heappop, heappush
 from terra_sdk.core import AccAddress, Coin, Coins, Dec, TxLog
 from terra_sdk.core.market.msgs import MsgSwap
-from terra_sdk.core.wasm.msgs import MsgExecuteContract, parse_msg
+from terra_sdk.core.wasm.msgs import MsgExecuteContract
 from terra_sdk.key.mnemonic import MnemonicKey
 from src.consts import *
 from src.wallet import *
@@ -133,6 +133,27 @@ def from_denom(denom: str) -> str:
         if tokens_info[token]['denom'] == denom:
             return token
     return denom
+
+
+def flatten(dict):
+    for key, value in dict.items():
+        if isinstance(value, Dict):
+            yield from flatten(value)
+        else:
+            yield value
+
+
+def asset_from_info(asset_info: Dict):
+    try:
+        for asset in asset_info:
+            if 'native' in asset:
+                for denom in flatten(asset_info[asset]):
+                    return from_denom(denom)
+            else:
+                for contract in flatten(asset_info[asset]):
+                    return token_from_contract(contract)
+    except:
+        print('asset_from_info', asset_info)
 
 
 def get_dex(token: str) -> str:
