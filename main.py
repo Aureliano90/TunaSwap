@@ -1,7 +1,7 @@
 from src.order import *
 import sys
 
-assert sys.version_info >= (3, 8), print('Python version >=3.8 is required.\nYour Python version: ', sys.version)
+assert sys.version_info >= (3, 10), print('Python version >=3.10 is required.\nYour Python version: ', sys.version)
 
 
 async def main():
