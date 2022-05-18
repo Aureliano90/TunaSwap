@@ -41,7 +41,7 @@ class Swap:
 class Pool:
     """Class representing an AMM liquidity pool
     """
-    __slots__ = ('amp', 'amount1', 'amount2', 'contract', 'dex', 'fee', 'last_query', 'pair', 'stable',
+    __slots__ = ('amp', 'amount1', 'amount2', 'contract', 'dex', 'fee', 'pair', 'stable',
                  'token1', 'token2', 'tx_fee', 'params', 'recovered')
 
     def __init__(self, *args):
@@ -67,7 +67,6 @@ class Pool:
         assert self.token1 in tokens_info, f"No token info {self.token1}"
         assert self.token2 in tokens_info, f"No token info {self.token2}"
         self.amp = self.amount1 = self.amount2 = Dec(0)
-        self.last_query = 0
         # Terra Market module swap
         if self.dex == 'native_swap':
             self.params = {'luna_ust': Dec(0)}
@@ -157,23 +156,21 @@ class Pool:
         """Query liquidity
         """
         if self.dex == 'native_swap':
-            if (loop.time() - self.last_query) > 3:
-                try:
-                    delta, self.params, rates = await asyncio.gather(terra.market.terra_pool_delta(),
-                                                                     terra.market.parameters(),
-                                                                     terra.oracle.exchange_rates())
-                except LCDResponseError:
-                    return await self.query()
-                self.last_query = loop.time()
-                self.fee = self.params['min_stability_spread']
-                self.params['luna_sdt'] = rates.get('usdr').amount
-                self.params['luna_ust'] = rates.get('uusd').amount
-                self.params['sdt_ust'] = self.params['luna_ust'] / self.params['luna_sdt']
-                self.params['delta'] = delta
-                self.amount1 = self.params['base_pool'] * self.params['base_pool'] / (
-                        self.params['base_pool'] + self.params['delta']) / self.params['luna_sdt']
-                self.amount2 = (self.params['base_pool'] + self.params['delta']) * self.params['sdt_ust']
-                self.recovered = False
+            try:
+                delta, self.params, rates = await asyncio.gather(terra.market.terra_pool_delta(),
+                                                                 terra.market.parameters(),
+                                                                 terra.oracle.exchange_rates())
+            except LCDResponseError:
+                return await self.query()
+            self.fee = self.params['min_stability_spread']
+            self.params['luna_sdt'] = rates.get('usdr').amount
+            self.params['luna_ust'] = rates.get('uusd').amount
+            self.params['sdt_ust'] = self.params['luna_ust'] / self.params['luna_sdt']
+            self.params['delta'] = delta
+            self.amount1 = self.params['base_pool'] * self.params['base_pool'] / (
+                    self.params['base_pool'] + self.params['delta']) / self.params['luna_sdt']
+            self.amount2 = (self.params['base_pool'] + self.params['delta']) * self.params['sdt_ust']
+            self.recovered = False
         else:
             if self.stable:
                 pool, config = await multicall_query(self.multicall_query_msg())
@@ -183,52 +180,69 @@ class Pool:
             self.amount1 = self._token_amount(pool['assets'], self.token1)
             self.amount2 = self._token_amount(pool['assets'], self.token2)
 
-    async def simulate_msg(self, msg: Msg):
+    async def simulate_msg(self, msg: Msg | Swap) -> bool:
         """Simulate mempool messages
         """
-        bid_size = Dec(0)
-        if isinstance(msg, MsgExecuteContract):
-            # Native tokens
-            if msg.contract == self.contract:
-                if 'swap' in msg.execute_msg:
-                    coin = msg.coins.to_list()[0]
-                    token = from_denom(coin.denom)
-                    bid_size = Dec(coin.amount)
-            # CW20 tokens
+        bid_size = minimum_receive = Dec(0)
+        if isinstance(msg, Msg):
+            if isinstance(msg, MsgExecuteContract):
+                execute_msg = msg.execute_msg
+                # Native tokens
+                if msg.contract == self.contract:
+                    if msg_validator.validate(execute_msg, schema=swap_schema):
+                        coins = msg.coins.to_list()
+                        if coins:
+                            coin = coins[0]
+                            bid = from_denom(coin.denom)
+                            bid_size = Dec(coin.amount)
+                # CW20 tokens
+                else:
+                    bid = token_from_contract(msg.contract)
+                    if bid is not None and msg_validator.validate(execute_msg, schema=send_schema):
+                        if self.contract == execute_msg['send']['contract']:
+                            execute_msg = base64str_decode(execute_msg['send']['msg'])
+                            if msg_validator.validate(execute_msg, schema=swap_schema):
+                                bid_size = Dec(execute_msg['send']['amount'])
+                if bid_size != Dec(0):
+                    if 'belief_price' in execute_msg['swap']:
+                        belief_price = Dec(execute_msg['swap']['belief_price'])
+                        if belief_price != Dec(0):
+                            minimum_receive = bid_size / belief_price
+            elif isinstance(msg, MsgSwap):
+                assert self.dex == 'native_swap'
+                if not self.recovered:
+                    self.recovered = True
+                    self.params['delta'] *= 1 - 1 / self.params['pool_recovery_period']
+                    self.amount1 = self.params['base_pool'] * self.params['base_pool'] / (
+                            self.params['base_pool'] + self.params['delta']) / self.params['luna_sdt']
+                    self.amount2 = (self.params['base_pool'] + self.params['delta']) * self.params['sdt_ust']
+                coin = msg.offer_coin
+                bid = from_denom(coin.denom)
+                bid_size = Dec(coin.amount)
+                if bid not in self.pair.pair or from_denom(msg.ask_denom) != self.pair.other(bid):
+                    return False
             else:
-                token = token_from_contract(msg.contract)
-                if token is not None and 'send' in msg.execute_msg:
-                    if 'contract' in msg.execute_msg['send']:
-                        if self.contract == msg.execute_msg['send']['contract']:
-                            if 'swap' in base64str_decode(msg.execute_msg['send']['msg']):
-                                bid_size = Dec(msg.execute_msg['send']['amount'])
-        elif isinstance(msg, MsgSwap):
-            assert self.dex == 'native_swap'
-            if not self.recovered:
-                self.recovered = True
-                self.params['delta'] *= 1 - 1 / self.params['pool_recovery_period']
-                self.amount1 = self.params['base_pool'] * self.params['base_pool'] / (
-                        self.params['base_pool'] + self.params['delta']) / self.params['luna_sdt']
-                self.amount2 = (self.params['base_pool'] + self.params['delta']) * self.params['sdt_ust']
-            coin = msg.offer_coin
-            token = from_denom(coin.denom)
-            bid_size = Dec(coin.amount)
-            if token not in self.pair.pair or from_denom(msg.ask_denom) != self.pair.other(token):
-                return
+                return False
+            if bid_size != Dec(0):
+                swap = await self.simulate(bid, bid_size)
+        elif isinstance(msg, Swap):
+            swap = msg
+            bid = swap.bid
+            bid_size = swap.bid_size
         else:
-            return
-
+            raise TypeError
         if bid_size != Dec(0):
-            swap = await self.simulate(token, bid_size)
-            if self.token1 == token:
-                self.amount1 += bid_size
-                self.amount2 -= swap.ask_size
-            elif self.token2 == token:
-                self.amount2 += bid_size
-                self.amount1 -= swap.ask_size
-            else:
-                raise ValueError
-
+            if swap.ask_size >= minimum_receive:
+                if self.token1 == bid:
+                    self.amount1 += swap.bid_size
+                    self.amount2 -= swap.ask_size
+                elif self.token2 == bid:
+                    self.amount2 += swap.bid_size
+                    self.amount1 -= swap.ask_size
+                else:
+                    raise ValueError
+                return True
+        return False
 
     def multicall_query_msg(self) -> List[ABI.multicall_query]:
         """Query message
@@ -254,8 +268,9 @@ class Pool:
     async def xy(self, token_in: str) -> (Dec, Dec):
         """Initial liquidity
         """
-        if self.dex == 'native_swap':
+        if self.amount1 == Dec(0) or self.amount2 == Dec(0):
             await self.query()
+        if self.dex == 'native_swap':
             if token_in == 'luna':
                 return self.amount1, self.amount2
             elif token_in == 'ust':
@@ -263,8 +278,6 @@ class Pool:
             else:
                 raise ValueError
         else:
-            if self.amount1 == Dec(0) or self.amount2 == Dec(0):
-                await self.query()
             if token_in == self.token1:
                 return self.amount1, self.amount2
             elif token_in == self.token2:
@@ -482,17 +495,13 @@ async def multi_pools_query(pools: Iterable[Pool]):
             i += 1
 
 
-def pool_from_contract(contract: str) -> Pool:
-    for pair, dexes in pools_info.items():
-        for dex, info in dexes.items():
-            if info['contract'] == contract:
-                return Pool(pair, dex)
-
-
 def pools_from_contracts() -> Dict[str, Pool]:
-    pools = dict()
-    for pair, dexes in pools_info.items():
-        for dex, info in dexes.items():
-            if 'contract' in info:
-                pools[info['contract']] = Pool(pair, dex)
-    return pools
+    return {info['contract']: Pool(pair, dex) for pair, dexes in pools_info.items()
+            for dex, info in dexes.items() if 'contract' in info}
+
+
+pool_contract_map = pools_from_contracts()
+
+
+def pool_from_contract(contract: str) -> Pool | None:
+    return pool_contract_map.get(contract)

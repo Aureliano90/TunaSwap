@@ -229,3 +229,42 @@ class Dex:
         bid, ask = self.assertion(bid, ask)
         routing = await self.dijkstra_routing(bid, bid_size, ask)
         return await self.route_to_msg(routing, minimum_receive)
+
+    async def simulate_msg(self, execute_msg: Dict, pool_map: Dict[Tuple[Pair, str], Pool]) -> bool:
+        """Simulate mempool messages
+        """
+        ask_size = Dec(execute_msg['execute_swap_operations']['offer_amount'])
+        operations: List[Dict] = execute_msg['execute_swap_operations']['operations']
+        if 'minimum_receive' in execute_msg['execute_swap_operations']:
+            minimum_receive = Dec(execute_msg['execute_swap_operations']['minimum_receive'])
+        else:
+            minimum_receive = Dec(0)
+        pools = []
+        swaps = []
+        for operation in operations:
+            for dex in operation:
+                break
+            if dex == self.dex:
+                dex_swap = operation[dex]
+                bid = asset_from_info(dex_swap['offer_asset_info'])
+                ask = asset_from_info(dex_swap['ask_asset_info'])
+            else:
+                assert dex == 'native_swap'
+                native_swap = operation['native_swap']
+                bid = from_denom(native_swap['offer_denom'])
+                ask = from_denom(native_swap['ask_denom'])
+            if bid and ask:
+                if (Pair(bid, ask), dex) in pool_map:
+                    pool = pool_map[Pair(bid, ask), dex]
+                    pools.append(pool)
+                    swap = await pool.simulate(bid, ask_size)
+                    swaps.append(swap)
+                    ask_size = swap.ask_size
+                    continue
+            break
+        else:
+            if ask_size > minimum_receive:
+                for pool, swap in zip(pools, swaps):
+                    await pool.simulate_msg(swap)
+                return True
+        return False

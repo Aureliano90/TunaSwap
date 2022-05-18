@@ -49,23 +49,19 @@ def filter_tx_log_by_type(
 ) -> Dict:
     """Filter transaction log by matching conditions' index
     """
-    res = dict()
     index = -1
-    for key in conditions:
-        values = log.events_by_type[event][key]
-        if index == -1:
-            for i, value in enumerate(values):
-                if value == conditions[key]:
-                    index = i
-                    break
-        else:
-            if values[index] != conditions[key]:
-                return {}
-    if index == -1:
-        return {}
-    for key, values in log.events_by_type[event].items():
-        res[key] = values[index]
-    return res
+    events_by_type = log.events_by_type[event]
+    for key, value in conditions.items():
+        try:
+            if index == -1:
+                index = events_by_type[key].index(value)
+            else:
+                if index != events_by_type[key].index(value):
+                    return {}
+        except ValueError:
+            return {}
+    else:
+        return {key: values[index] for key, values in events_by_type.items()}
 
 
 def filter_tx_log_by_order(
@@ -76,27 +72,14 @@ def filter_tx_log_by_order(
 ) -> Dict:
     """Filter transaction log by dividing an event into sections
     """
-    for e in log.events:
-        if e['type'] == event:
-            events = e['attributes']
-            break
-    else:
-        return {}
-    sections = []
-    for i, v in enumerate(events):
-        if v['key'] == divider:
-            sections.append(i)
-    sections.append(len(events))
-    for i in range(len(sections) - 1):
-        section = {item['key']: item['value'] for item in events[sections[i]:sections[i + 1]]}
-        for k, v in conditions.items():
-            if k in section:
-                if v != section[k]:
-                    break
-            else:
-                break
-        else:
-            return section
+    events = [e['attributes'] for e in log.events if e['type'] == event]
+    if events:
+        events = events[0]
+        sections = [i for i, v in enumerate(events) if v['key'] == divider] + [len(events)]
+        for i in range(len(sections) - 1):
+            section = {item['key']: item['value'] for item in events[sections[i]:sections[i + 1]]}
+            if all([section.get(k) == v for k, v in conditions.items()]):
+                return section
     return {}
 
 
@@ -107,33 +90,36 @@ def calculate_profit(tx: BlockTxBroadcastResult | TxInfo | TxResult | Dict) -> C
         logs = tx.logs
     except AttributeError:
         return Coins()
-    coin_spent = coin_received = token_received = token_spent = Coins()
+    coin_spent, coin_received, token_received, token_spent = Coins(), Coins(), Coins(), Coins()
     for log in logs:
         spent_event = filter_tx_log_by_type(log,
                                             'coin_spent',
                                             {'spender': wallet.key.acc_address})
         if spent_event:
-            coin_spent = coin_spent + Coins.from_str(spent_event['amount'])
+            coin_spent += Coins.from_str(spent_event['amount'])
         received_event = filter_tx_log_by_type(log,
                                                'coin_received',
                                                {'receiver': wallet.key.acc_address})
         if received_event:
-            coin_received = coin_received + Coins.from_str(received_event['amount'])
+            coin_received += Coins.from_str(received_event['amount'])
         received_event = filter_tx_log_by_order(log,
                                                 'from_contract',
                                                 'contract_address',
                                                 {'action': 'transfer', 'to': wallet.key.acc_address})
         if received_event:
             token = token_from_contract(received_event['contract_address'])
-            token_received = token_received + Coins({token: received_event['amount']})
+            token_received += Coins({token: received_event['amount']})
         spent_event = filter_tx_log_by_order(log,
                                              'from_contract',
                                              'contract_address',
                                              {'action': 'send', 'from': wallet.key.acc_address})
         if spent_event:
             token = token_from_contract(spent_event['contract_address'])
-            token_spent = token_spent + Coins({token: spent_event['amount']})
-    cost = Coins(uusd=gas_prices['uusd']).get('uusd') * tx.gas_wanted
+            token_spent += Coins({token: spent_event['amount']})
+    if hasattr(tx, 'tx'):
+        cost = tx.tx.auth_info.fee.amount
+    else:
+        cost = Coins(gas_prices).get('uusd') * tx.gas_wanted
     coins = coin_received - coin_spent + token_received - token_spent - cost
     return from_Dec(coins)
 

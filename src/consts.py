@@ -1,7 +1,8 @@
 testnet = True
 max_spread = 0.5
 slippage = 0.003
-native_tokens = {'ust', 'luna'}
+native_tokens = {'ust': 'uusd',
+                 'luna': 'uluna'}
 
 if testnet:
     tokens_info = {'ust': {'denom': 'uusd', 'decimals': 6,
@@ -54,6 +55,8 @@ else:
                                   'decimals': 6, 'dex': ('terra_swap',)},
                    'psi': {'contract': 'terra12897djskt9rge8dtmm86w654g7kzckkd698608',
                            'decimals': 6, 'dex': ('terra_swap', 'astro_swap')},
+                   'neth': {'contract': 'terra178v546c407pdnx5rer3hu8s2c0fc924k74ymnn',
+                            'decimals': 6, 'dex': ('terra_swap', 'astro_swap')},
                    'nluna': {'contract': 'terra10f2mt82kjnkxqj2gepgwl637u2w4ue2z5nhz5j',
                              'decimals': 6, 'dex': ('terra_swap', 'astro_swap')},
                    'astro': {'contract': 'terra1xj49zyqrwpv5k928jwfpfy2ha668nwdgkwlrg3',
@@ -66,16 +69,20 @@ else:
                             'decimals': 6, 'dex': ('terra_swap', 'loop')},
                    'prism': {'contract': 'terra1dh9478k2qvqhqeajhn75a2a7dsnf74y5ukregw',
                              'decimals': 6, 'dex': ('prism_swap',)},
+                   'beth': {'contract': 'terra1dzhzukyezv0etz22ud940z7adyv7xgcjkahuun',
+                            'decimals': 6, 'dex': ('terra_swap', 'astro_swap')},
+                   'meth': {'contract': 'terra1dk3g53js3034x4v5c3vavhj2738une880yu6kx',
+                            'decimals': 6, 'dex': ('terra_swap', 'astro_swap')},
                    # 'batom': {'contract': 'terra18zqcnl83z98tf6lly37gghm7238k7lh79u4z9a',
                    #           'decimals': 6, 'dex': ()},
                    # 'atom': {'denom': 'ibc/18ABA66B791918D51D33415DA173632735D830E2E77E63C91C11D3008CFD5262',
                    #          'decimals': 6, 'dex': ()},
-                   # 'stt': {'contract': 'terra13xujxcrc9dqft4p9a8ls0w3j0xnzm6y2uvve8n',
-                   #          'decimals': 6, 'dex': ('astro_swap', )},
-                   # 'twd': {'contract': 'terra19djkaepjjswucys4npd5ltaxgsntl7jf0xz7w6',
-                   #          'decimals': 6, 'dex': ('terra_swap', )},
-                   # 'loop': {'contract': 'terra1nef5jf6c7js9x6gkntlehgywvjlpytm7pcgkn4',
-                   #          'decimals': 6, 'dex': ('loop', )},
+                   'stt': {'contract': 'terra13xujxcrc9dqft4p9a8ls0w3j0xnzm6y2uvve8n',
+                           'decimals': 6, 'dex': ('astro_swap',)},
+                   'twd': {'contract': 'terra19djkaepjjswucys4npd5ltaxgsntl7jf0xz7w6',
+                           'decimals': 6, 'dex': ('terra_swap',)},
+                   'loop': {'contract': 'terra1nef5jf6c7js9x6gkntlehgywvjlpytm7pcgkn4',
+                            'decimals': 6, 'dex': ('loop',)},
                    }
 
 
@@ -298,6 +305,12 @@ else:
             'astro_swap': {'contract': 'terra1v5ct2tuhfqd0tf8z0wwengh4fg77kaczgf6gtx',
                            'fee': 0.003, 'tx_fee': 0, 'stable': False}
         },
+        Pair('neth', 'psi'): {
+            'terra_swap': {'contract': 'terra14zhkur7l7ut7tx6kvj28fp5q982lrqns59mnp3',
+                           'fee': 0.003, 'tx_fee': 0, 'stable': False},
+            'astro_swap': {'contract': 'terra18hjdxnnkv8ewqlaqj3zpn0vsfpzdt3d0y2ufdz',
+                           'fee': 0.003, 'tx_fee': 0, 'stable': False}
+        },
         Pair('nluna', 'psi'): {
             'astro_swap': {'contract': 'terra10lv5wz84kpwxys7jeqkfxx299drs3vnw0lj8mz',
                            'fee': 0.003, 'tx_fee': 0, 'stable': False},
@@ -306,6 +319,8 @@ else:
         },
         Pair('astro', 'ust'): {
             'astro_swap': {'contract': 'terra1l7xu2rl3c7qmtx3r5sd2tz25glf6jh8ul7aag7',
+                           'fee': 0.003, 'tx_fee': 0, 'stable': False},
+            'terra_swap': {'contract': 'terra1pufczag48fwqhsmekfullmyu02f93flvfc9a25',
                            'fee': 0.003, 'tx_fee': 0, 'stable': False}
         },
         Pair('mine', 'ust'): {
@@ -317,6 +332,8 @@ else:
                            'fee': 0.003, 'tx_fee': 0, 'stable': False}
         },
         Pair('kuji', 'ust'): {
+            'astro_swap': {'contract': 'terra1hasy32pvxmgu485x5tujylemqxynsv72lsu7ve',
+                           'fee': 0.003, 'tx_fee': 0, 'stable': False},
             'terra_swap': {'contract': 'terra1zkyrfyq7x9v5vqnnrznn3kvj35az4f6jxftrl2',
                            'fee': 0.003, 'tx_fee': 0, 'stable': False},
             'loop': {'contract': 'terra1wh2jqjkagzyd3yl4sddlapy45ry808xe80fchh',
@@ -334,32 +351,48 @@ else:
             'prism_swap': {'contract': 'terra1r38qlqt69lez4nja5h56qwf4drzjpnu8gz04jd',
                            'fee': 0.003, 'tx_fee': 0, 'stable': False},
         },
-        # Pair('stt', 'ust'): {
-        #     'astro_swap': {'contract': 'terra1m95udvvdame93kl6j2mk8d03kc982wqgr75jsr',
-        #                    'fee': 0.003, 'tx_fee': 0, 'stable': False},
-        # },
-        # Pair('twd', 'ust'): {
-        #     'astro_swap': {'contract': 'terra1etdkg9p0fkl8zal6ecp98kypd32q8k3ryced9d',
-        #                    'fee': 0.003, 'tx_fee': 0, 'stable': False},
-        # },
-        # Pair('loop', 'ust'): {
-        #     'loop': {'contract': 'terra106a00unep7pvwvcck4wylt4fffjhgkf9a0u6eu',
-        #                    'fee': 0.003, 'tx_fee': 0, 'stable': False},
-        # },
-        # Pair('loop', 'luna'): {
-        #     'loop': {'contract': 'terra1tus5ec9qsdht8dapq9ldfnsf8eehnfmwvsut83',
-        #                    'fee': 0.003, 'tx_fee': 0, 'stable': False},
-        # },
-        # Pair('loop', 'aust'): {
-        #     'loop': {'contract': 'terra1efvhm927dehrka0cgpcptt5gvjfdgqm07smawu',
-        #                    'fee': 0.003, 'tx_fee': 0, 'stable': False},
-        # },
-        # Pair('loop', 'kuji'): {
-        #     'loop': {'contract': 'terra13f87x4c87ct5545t3j4mqw4k6jmgds5609z92c',
-        #                    'fee': 0.003, 'tx_fee': 0, 'stable': False},
-        # },
-        # Pair('loop', 'anc'): {
-        #     'loop': {'contract': 'terra1w7hny2catfwsv6dq8gfm4zgazx3hmpl3xwzxya',
-        #                    'fee': 0.003, 'tx_fee': 0, 'stable': False},
-        # },
+        Pair('beth', 'ust'): {
+            'astro_swap': {'contract': 'terra1myl709y74vrdcyuxy6g9wv5l2sgah4e9lstnwe',
+                           'fee': 0.003, 'tx_fee': 0, 'stable': False},
+            'terra_swap': {'contract': 'terra1c0afrdc5253tkp5wt7rxhuj42xwyf2lcre0s7c',
+                           'fee': 0.003, 'tx_fee': 0, 'stable': False},
+            'loop': {'contract': 'terra1vdc7mxx549pqpelcdkwydp2px3e4vvlrcvdjz9',
+                     'fee': 0.003, 'tx_fee': 0, 'stable': False},
+        },
+        Pair('beth', 'meth'): {
+            'terra_swap': {'contract': 'terra1c5swgtnuunpf75klq5uztynurazuwqf0mmmcyy',
+                           'fee': 0.003, 'tx_fee': 0, 'stable': False},
+        },
+        Pair('meth', 'ust'): {
+            'terra_swap': {'contract': 'terra14fyt2g3umeatsr4j4g2rs8ca0jceu3k0mcs7ry',
+                           'fee': 0.003, 'tx_fee': 0, 'stable': False},
+        },
+        Pair('stt', 'ust'): {
+            'astro_swap': {'contract': 'terra1m95udvvdame93kl6j2mk8d03kc982wqgr75jsr',
+                           'fee': 0.003, 'tx_fee': 0, 'stable': False},
+        },
+        Pair('twd', 'ust'): {
+            'astro_swap': {'contract': 'terra1etdkg9p0fkl8zal6ecp98kypd32q8k3ryced9d',
+                           'fee': 0.003, 'tx_fee': 0, 'stable': False},
+        },
+        Pair('loop', 'ust'): {
+            'loop': {'contract': 'terra106a00unep7pvwvcck4wylt4fffjhgkf9a0u6eu',
+                     'fee': 0.003, 'tx_fee': 0, 'stable': False},
+        },
+        Pair('loop', 'luna'): {
+            'loop': {'contract': 'terra1tus5ec9qsdht8dapq9ldfnsf8eehnfmwvsut83',
+                     'fee': 0.003, 'tx_fee': 0, 'stable': False},
+        },
+        Pair('loop', 'aust'): {
+            'loop': {'contract': 'terra1efvhm927dehrka0cgpcptt5gvjfdgqm07smawu',
+                     'fee': 0.003, 'tx_fee': 0, 'stable': False},
+        },
+        Pair('loop', 'kuji'): {
+            'loop': {'contract': 'terra13f87x4c87ct5545t3j4mqw4k6jmgds5609z92c',
+                     'fee': 0.003, 'tx_fee': 0, 'stable': False},
+        },
+        Pair('loop', 'anc'): {
+            'loop': {'contract': 'terra1w7hny2catfwsv6dq8gfm4zgazx3hmpl3xwzxya',
+                     'fee': 0.003, 'tx_fee': 0, 'stable': False},
+        },
     }

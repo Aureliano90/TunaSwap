@@ -2,13 +2,14 @@ from typing import Dict, List
 from terra_sdk.client.lcd import AsyncLCDClient, AsyncWallet as _AsyncWallet
 from terra_sdk.client.lcd.api.tx import CreateTxOptions, SignerOptions
 from terra_sdk.core import Tx, TxInfo
-from terra_sdk.core.broadcast import BlockTxBroadcastResult, AsyncTxBroadcastResult
+from terra_sdk.core.broadcast import BlockTxBroadcastResult, AsyncTxBroadcastResult, SyncTxBroadcastResult
 from terra_sdk.core.fee import Fee
 from terra_sdk.core.msg import Msg
 from terra_sdk.util.hash import hash_amino
 from terra_sdk.exceptions import LCDResponseError
 from terra_sdk.key.key import Key
 from aiohttp import ClientError
+from src.schema import *
 import asyncio
 
 
@@ -105,9 +106,11 @@ class BlockChain:
                 pass
 
     async def transactions(self) -> List[Tx]:
+        if not self.block: await self.block_info()
         return [await self.lcd.tx.decode(encoded_tx) for encoded_tx in self.block['data']['txs']]
 
-    def hashes(self) -> List[str]:
+    async def hashes(self) -> List[str]:
+        if not self.block: await self.block_info()
         return [hash_amino(encoded_tx) for encoded_tx in self.block['data']['txs']]
 
 
@@ -236,6 +239,22 @@ class AsyncWallet(_AsyncWallet):
                 return result
             except LCDResponseError as exc:
                 code = int(exc.response.status)
+
+    async def broadcast_sync(
+            self,
+            tx: Tx
+    ) -> SyncTxBroadcastResult | None:
+        """Broadcast and wait for result
+        """
+        try:
+            self.sequence += 1
+            result = await self.lcd.tx.broadcast_sync(tx)
+            if hasattr(result, 'code') and result.code:
+                print(f"Transaction failed. Code: {result.code} Codespace: {result.codespace}")
+                print(f"Raw log: {result.raw_log}")
+            return result
+        except LCDResponseError as exc:
+            print(f"Exception in {type(self).__name__}.broadcast_sync\n{exc}")
 
     async def broadcast_async(
             self,

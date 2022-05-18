@@ -24,10 +24,21 @@ terra = AsyncLCDClient(chain_id=chain_id,
                        url=light_clinet_address,
                        gas_prices=Coins(uusd=gas_prices['uusd']),
                        gas_adjustment=1.2)
-fcd = AsyncLCDClient(chain_id=chain_id,
-                     url='https://fcd.terra.dev',
-                     gas_prices=Coins(uusd=gas_prices['uusd']),
-                     gas_adjustment=1.2)
+
+
+async def compare_fee():
+    global fee_denom
+    rate = (await terra.oracle.exchange_rates()).get('uusd').amount
+    if Dec(gas_prices['uluna']) * rate > Dec(gas_prices['uusd']):
+        fee_denom = 'uusd'
+    else:
+        fee_denom = 'uluna'
+    terra.gas_prices = Coins({fee_denom: gas_prices[fee_denom]})
+
+
+loop = asyncio.get_event_loop_policy().get_event_loop()
+fee_denom = 'uusd'
+loop.run_until_complete(compare_fee())
 
 
 def base64str_decode(msg: str) -> Any:
@@ -60,7 +71,6 @@ except OSError:
         w.write(base64str_encode(seed))
     exit()
 
-loop = asyncio.get_event_loop_policy().get_event_loop()
 mk = MnemonicKey(base64str_decode(seed))
 wallet: AsyncWallet = loop.run_until_complete(AsyncWallet(terra, mk))
 
@@ -123,43 +133,45 @@ def convert_params(method):
 def get_denom(token: str) -> str:
     """Get denomination from token symbol
     """
-    return tokens_info[token]['denom'] if token in native_tokens else token
+    return native_tokens[token] if token in native_tokens else token
 
 
 def from_denom(denom: str) -> str:
     """Get token symbol from denomination
     """
     for token in native_tokens:
-        if tokens_info[token]['denom'] == denom:
+        if native_tokens[token] == denom:
             return token
     return denom
 
 
-def flatten(dict):
-    for key, value in dict.items():
-        if isinstance(value, Dict):
+def flatten(data):
+    if isinstance(data, Dict):
+        for key, value in data.items():
             yield from flatten(value)
-        else:
-            yield value
+    yield data
 
 
 def asset_from_info(asset_info: Dict):
     try:
-        for asset in asset_info:
+        for asset, info in asset_info.items():
             if 'native' in asset:
-                for denom in flatten(asset_info[asset]):
+                for denom in flatten(info):
                     return from_denom(denom)
             else:
-                for contract in flatten(asset_info[asset]):
+                for contract in flatten(info):
                     return token_from_contract(contract)
     except:
         print('asset_from_info', asset_info)
 
 
-def get_dex(token: str) -> str:
+def get_dex(token: str) -> Tuple:
     """Get DEXes trading `token`
     """
-    return tokens_info[token]['dex']
+    try:
+        return tokens_info[token]['dex']
+    except KeyError:
+        return ()
 
 
 def find_dex(s: str) -> str:
@@ -184,11 +196,7 @@ def get_contract(token: str) -> AccAddress | str:
 def tokens_from_contracts() -> Dict[str, str]:
     """Mapping between contract and token symbol
     """
-    tokens = dict()
-    for token, info in tokens_info.items():
-        if 'contract' in info:
-            tokens[info['contract']] = token
-    return tokens
+    return {info['contract']: token for token, info in tokens_info.items() if 'contract' in info}
 
 
 token_contract_map = tokens_from_contracts()
@@ -197,8 +205,7 @@ token_contract_map = tokens_from_contracts()
 def token_from_contract(contract: str) -> str | None:
     """Get token symbol from `contract` address
     """
-    if contract in token_contract_map:
-        return token_contract_map[contract]
+    return token_contract_map.get(contract)
 
 
 async def token_balance(token: str) -> Dec:
